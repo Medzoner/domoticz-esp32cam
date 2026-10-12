@@ -16,6 +16,42 @@ consumers such as MotionEye, Home Assistant, and OctoPrint.
 - Native unit tests and Cppcheck static analysis
 - GitHub Actions CI and tagged firmware releases
 
+## Streaming Performance
+
+The camera uses two PSRAM frame buffers with latest-frame capture to minimize
+latency. The MJPEG server combines each multipart boundary and JPEG header into
+one TCP write, then sends image data in 16 KiB blocks. This reduces socket calls
+while retaining a bounded timeout for slow consumers.
+
+The browser interface uses asynchronous image decoding and automatically
+reconnects with exponential backoff after a stream interruption. It disconnects
+its own stream while the page is hidden, which avoids wasting Wi-Fi bandwidth,
+browser decoding time, and ESP32 processing capacity in background tabs.
+
+The default 10 FPS cap favors stable multi-client delivery over maximum frame
+rate. JPEG quality has the greatest effect on bandwidth; increase the numeric
+quality value when more simultaneous clients or a weaker Wi-Fi signal require
+smaller frames.
+
+### Adaptive resource controller
+
+The stream server evaluates system pressure every two seconds from the active
+client count, average frame delivery time, Wi-Fi RSSI, free heap, and socket
+write failures. It selects one of five profiles ranging from 10 FPS at the
+configured JPEG quality to an emergency 4 FPS profile with additional JPEG
+compression.
+
+Degradation is immediate when pressure rises. Recovery requires three healthy
+evaluation windows per level, which prevents rapid profile oscillation. The
+configured JPEG quality remains the user's baseline; adaptive compression is a
+temporary offset and is removed when conditions recover. `/health` and the web
+interface expose the target FPS, delivery time, quality offset, and pressure
+level.
+
+The web interface renders the complete `/health` payload as a system health
+panel. It refreshes every two seconds, prevents overlapping requests, disables
+HTTP caching, and pauses polling while the browser tab is hidden.
+
 ## Hardware
 
 - AI Thinker ESP32-CAM with an OV2640 sensor

@@ -3,6 +3,7 @@
 #include <WiFi.h>
 
 #include "config/app_config.h"
+#include "core/stream_adaptation.h"
 #include "ports/camera_port.h"
 
 namespace app::adapters {
@@ -14,6 +15,10 @@ struct StreamStats {
   uint32_t frames;
   uint16_t framesPerSecondTimes10;
   uint32_t stackHeadroomBytes;
+  uint16_t averageDeliveryMs;
+  uint8_t targetFps;
+  uint8_t jpegQualityOffset;
+  uint8_t pressureLevel;
   IPAddress peer;
 };
 
@@ -22,6 +27,8 @@ class MjpegServer {
   explicit MjpegServer(ports::CameraPort& camera);
   void begin();
   void stopAll();
+  void setBaseJpegQuality(uint8_t quality);
+  uint8_t baseJpegQuality() const;
   StreamStats stats() const;
 
  private:
@@ -36,6 +43,8 @@ class MjpegServer {
   void refreshClientStats();
   void broadcastFrame();
   void refreshPerformanceStats();
+  void updateAdaptiveProfile();
+  void applyProfile(const core::StreamProfile& profile);
 
   ports::CameraPort& camera_;
   WiFiServer server_;
@@ -47,10 +56,21 @@ class MjpegServer {
   volatile uint32_t frameCount_ = 0;
   volatile uint16_t framesPerSecondTimes10_ = 0;
   volatile uint32_t stackHeadroomBytes_ = 0;
+  volatile uint16_t averageDeliveryMs_ = 0;
+  volatile uint8_t targetFps_ = config::kTargetStreamFps;
+  volatile uint8_t jpegQualityOffset_ = 0;
+  volatile uint8_t pressureLevel_ = 0;
+  volatile uint8_t baseJpegQuality_ = config::kDefaultJpegQuality;
   volatile uint32_t peerAddress_ = 0;
   TaskHandle_t taskHandle_ = nullptr;
+  core::AdaptiveStreamController adaptiveController_;
   uint32_t statsStartedAt_ = 0;
   uint32_t statsStartedAtFrame_ = 0;
+  uint32_t adaptationStartedAt_ = 0;
+  uint32_t deliveryDurationTotalMs_ = 0;
+  uint16_t deliverySamples_ = 0;
+  uint16_t writeFailures_ = 0;
+  volatile uint8_t appliedJpegQuality_ = config::kDefaultJpegQuality;
 };
 
 }  // namespace app::adapters

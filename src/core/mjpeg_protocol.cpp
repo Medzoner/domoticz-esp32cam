@@ -18,15 +18,16 @@ bool isStreamRequestLine(const char* requestLine) {
   return separator == ' ' || separator == '?';
 }
 
-std::size_t formatPartHeader(char* destination, std::size_t capacity,
-                             std::size_t jpegSize) {
+std::size_t formatPartPreamble(char* destination, std::size_t capacity,
+                               std::size_t jpegSize) {
   if (destination == nullptr || capacity == 0) {
     return 0;
   }
-  const int length = std::snprintf(destination, capacity,
-                                   "Content-Type: image/jpeg\r\n"
-                                   "Content-Length: %zu\r\n\r\n",
-                                   jpegSize);
+  const int length =
+      std::snprintf(destination, capacity,
+                    "%sContent-Type: image/jpeg\r\n"
+                    "Content-Length: %zu\r\n\r\n",
+                    kBoundary, jpegSize);
   if (length < 0 || static_cast<std::size_t>(length) >= capacity) {
     destination[0] = '\0';
     return 0;

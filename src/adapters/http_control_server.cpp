@@ -73,13 +73,15 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
              static_cast<unsigned int>(stats.peer[2]),
              static_cast<unsigned int>(stats.peer[3]));
   }
-  char response[448];
+  char response[640];
   snprintf(response, sizeof(response),
             "{\"status\":\"ok\",\"uptime_ms\":%lu,\"free_heap\":%u,"
             "\"min_free_heap\":%u,\"max_alloc_heap\":%u,\"rssi\":%d,"
             "\"stream_server\":%s,\"stream_active\":%s,"
             "\"stream_sessions\":%u,\"stream_frames\":%u,"
             "\"stream_fps\":%u.%u,\"stream_stack_headroom\":%u,"
+            "\"stream_delivery_ms\":%u,\"stream_target_fps\":%u,"
+            "\"stream_quality_offset\":%u,\"stream_pressure\":%u,"
             "\"stream_clients\":%u,\"stream_peer\":\"%s\"}",
             millis(), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
             ESP.getMaxAllocHeap(), WiFi.RSSI(),
@@ -87,7 +89,8 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
             stats.clients > 0 ? "true" : "false", stats.sessions, stats.frames,
             static_cast<unsigned int>(stats.framesPerSecondTimes10 / 10),
             static_cast<unsigned int>(stats.framesPerSecondTimes10 % 10),
-            stats.stackHeadroomBytes,
+            stats.stackHeadroomBytes, stats.averageDeliveryMs, stats.targetFps,
+            stats.jpegQualityOffset, stats.pressureLevel,
             stats.clients, peer);
   httpd_resp_set_type(request, kJsonContentType);
   setCommonHeaders(request);
@@ -95,7 +98,8 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
 }
 
 esp_err_t HttpControlServer::statusHandler(httpd_req_t* request) {
-  const core::CameraStatus status = owner(request).camera_.status();
+  core::CameraStatus status = owner(request).camera_.status();
+  status.quality = owner(request).streams_.baseJpegQuality();
   char response[256];
   snprintf(response, sizeof(response),
            "{\"framesize\":%u,\"quality\":%u,\"brightness\":%d,"
@@ -138,10 +142,14 @@ esp_err_t HttpControlServer::controlHandler(httpd_req_t* request) {
   }
 
   core::CameraSetting setting;
+  const int parsedValue = atoi(value);
   if (!core::parseCameraSetting(variable, setting) ||
-      !owner(request).camera_.apply(setting, atoi(value))) {
+      !owner(request).camera_.apply(setting, parsedValue)) {
     return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST,
                                "unsupported or invalid setting");
+  }
+  if (setting == core::CameraSetting::kQuality) {
+    owner(request).streams_.setBaseJpegQuality(parsedValue);
   }
   setCommonHeaders(request);
   return httpd_resp_send(request, nullptr, 0);

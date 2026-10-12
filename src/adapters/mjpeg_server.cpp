@@ -17,6 +17,13 @@ void MjpegServer::begin() {
 
 void MjpegServer::stopAll() { stopRequested_ = true; }
 
+void MjpegServer::setBaseJpegQuality(uint8_t quality) {
+  baseJpegQuality_ = quality;
+  appliedJpegQuality_ = UINT8_MAX;
+}
+
+uint8_t MjpegServer::baseJpegQuality() const { return baseJpegQuality_; }
+
 StreamStats MjpegServer::stats() const {
   return {started_,
           clientCount_,
@@ -24,6 +31,10 @@ StreamStats MjpegServer::stats() const {
           frameCount_,
           framesPerSecondTimes10_,
           stackHeadroomBytes_,
+          averageDeliveryMs_,
+          targetFps_,
+          jpegQualityOffset_,
+          pressureLevel_,
           IPAddress(peerAddress_)};
 }
 
@@ -36,6 +47,7 @@ void MjpegServer::run() {
   server_.setNoDelay(true);
   statsStartedAt_ = millis();
   statsStartedAtFrame_ = frameCount_;
+  adaptationStartedAt_ = statsStartedAt_;
   started_ = true;
 
   for (;;) {
@@ -57,9 +69,11 @@ void MjpegServer::run() {
     const uint32_t frameStartedAt = millis();
     broadcastFrame();
     const uint32_t frameDuration = millis() - frameStartedAt;
-    if (frameDuration < config::kStreamFrameIntervalMs) {
-      vTaskDelay(
-          pdMS_TO_TICKS(config::kStreamFrameIntervalMs - frameDuration));
+    deliveryDurationTotalMs_ += frameDuration;
+    ++deliverySamples_;
+    const uint32_t frameInterval = 1000UL / targetFps_;
+    if (frameDuration < frameInterval) {
+      vTaskDelay(pdMS_TO_TICKS(frameInterval - frameDuration));
     } else {
       taskYIELD();
     }
@@ -178,8 +192,42 @@ void MjpegServer::refreshPerformanceStats() {
   framesPerSecondTimes10_ =
       static_cast<uint16_t>((frames * 10000UL) / elapsed);
   stackHeadroomBytes_ = uxTaskGetStackHighWaterMark(taskHandle_);
+  averageDeliveryMs_ = deliverySamples_ == 0
+                           ? 0
+                           : deliveryDurationTotalMs_ / deliverySamples_;
+  deliveryDurationTotalMs_ = 0;
+  deliverySamples_ = 0;
   statsStartedAt_ = now;
   statsStartedAtFrame_ = frameCount_;
+  if (now - adaptationStartedAt_ >= config::kStreamAdaptationIntervalMs) {
+    updateAdaptiveProfile();
+    adaptationStartedAt_ = now;
+  }
+}
+
+void MjpegServer::updateAdaptiveProfile() {
+  if (clientCount_ == 0) {
+    applyProfile(adaptiveController_.reset());
+    writeFailures_ = 0;
+    return;
+  }
+  const core::StreamLoad load{clientCount_, averageDeliveryMs_, WiFi.RSSI(),
+                              ESP.getFreeHeap(), writeFailures_};
+  writeFailures_ = 0;
+  applyProfile(adaptiveController_.update(load));
+}
+
+void MjpegServer::applyProfile(const core::StreamProfile& profile) {
+  targetFps_ = profile.targetFps;
+  jpegQualityOffset_ = profile.jpegQualityOffset;
+  pressureLevel_ = profile.pressureLevel;
+  const uint8_t desiredQuality = static_cast<uint8_t>(min(
+      static_cast<unsigned int>(config::kMaximumJpegQuality),
+      static_cast<unsigned int>(baseJpegQuality_) + profile.jpegQualityOffset));
+  if (desiredQuality != appliedJpegQuality_ &&
+      camera_.apply(core::CameraSetting::kQuality, desiredQuality)) {
+    appliedJpegQuality_ = desiredQuality;
+  }
 }
 
 void MjpegServer::broadcastFrame() {
@@ -188,23 +236,24 @@ void MjpegServer::broadcastFrame() {
     return;
   }
 
-  char partHeader[config::kPartHeaderCapacity];
-  const std::size_t headerLength = core::mjpeg::formatPartHeader(
-      partHeader, sizeof(partHeader), frame.size);
-  if (headerLength == 0) {
+  char partPreamble[config::kPartHeaderCapacity];
+  const std::size_t preambleLength = core::mjpeg::formatPartPreamble(
+      partPreamble, sizeof(partPreamble), frame.size);
+  if (preambleLength == 0) {
     camera_.release(frame);
     return;
   }
 
   for (std::size_t index = 0; index < config::kMaxStreamClients; ++index) {
     WiFiClient& client = clients_[index];
-    if (!client || !client.connected() ||
-        !writeAll(client,
-                  reinterpret_cast<const uint8_t*>(core::mjpeg::kBoundary),
-                  sizeof(core::mjpeg::kBoundary) - 1) ||
-        !writeAll(client, reinterpret_cast<const uint8_t*>(partHeader),
-                  headerLength) ||
+    if (!client || !client.connected()) {
+      closeClient(index);
+      continue;
+    }
+    if (!writeAll(client, reinterpret_cast<const uint8_t*>(partPreamble),
+                  preambleLength) ||
         !writeAll(client, frame.data, frame.size)) {
+      ++writeFailures_;
       closeClient(index);
     }
   }
