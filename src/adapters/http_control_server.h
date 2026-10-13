@@ -2,7 +2,6 @@
 
 #include <esp_http_server.h>
 
-#include <cstddef>
 #include <cstdint>
 
 #include "adapters/mjpeg_server.h"
@@ -14,7 +13,6 @@ namespace app::adapters {
 // declarations and the out of line definitions can name it unambiguously.
 enum class HttpAccess {
   kGranted,
-  kUnauthorized,
   kCrossOrigin,
   kRateLimited,
 };
@@ -39,7 +37,6 @@ class HttpControlServer {
   // Access checks. They never write to the socket: the caller sends the
   // matching rejection through denyAccess() so that a response is only ever
   // produced once.
-  static HttpAccess readAccess(httpd_req_t* request);
   static HttpAccess mutationAccess(httpd_req_t* request);
   static esp_err_t denyAccess(httpd_req_t* request, HttpAccess access);
 
@@ -49,9 +46,6 @@ class HttpControlServer {
   // must outlive the call (string literals are fine).
   static esp_err_t reject(httpd_req_t* request, const char* status,
                           const char* message);
-  static esp_err_t rejectUnauthorized(httpd_req_t* request);
-  void prepareAuthentication();
-
   static httpd_uri_t makeUri(const char* path,
                              esp_err_t (*handler)(httpd_req_t*),
                              HttpControlServer* server,
@@ -60,9 +54,6 @@ class HttpControlServer {
   ports::CameraPort& camera_;
   MjpegServer& streams_;
   httpd_handle_t server_ = nullptr;
-  char expectedAuthorization_[192]{};
-  std::size_t expectedAuthorizationLength_ = 0;
-  bool authenticationEnabled_ = false;
   uint32_t lastMutationAt_ = 0;
 };
 

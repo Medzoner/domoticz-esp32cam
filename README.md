@@ -15,7 +15,7 @@ consumers such as MotionEye, Home Assistant, and OctoPrint.
 - Static IPv4 configuration, DHCP hostname, and mDNS discovery
 - First-boot provisioning portal with network scanning and captive portal
   detection
-- HTTP Basic authentication and same-origin checks on the control interface
+- Same-origin checks and rate limiting on the control interface
 - Native unit tests and Cppcheck static analysis
 - GitHub Actions CI and tagged firmware releases
 
@@ -73,9 +73,7 @@ Set the Wi-Fi credentials, hostname, static address, and gateway in
 `include/secrets.h`. This file is ignored by Git and must never be committed.
 
 The same file also holds `CAMERA_SETUP_AP_PASSWORD` for the onboarding access
-point and `CAMERA_ADMIN_USER` / `CAMERA_ADMIN_PASSWORD` for HTTP Basic
-authentication on the control interface. An empty admin password disables
-authentication, which is only acceptable on a trusted lab network.
+point.
 
 The default hostname in the example configuration is `octoprint-cam`. Once the
 device is online, supported clients can reach it at
@@ -132,16 +130,16 @@ The control server listens on port 80:
 
 | Method | Path | Access | Description |
 |---|---|---|---|
-| `GET` | `/` | Authenticated | Responsive camera interface |
+| `GET` | `/` | Open | Responsive camera interface |
 | `GET` | `/health` | Open | Device, Wi-Fi, memory, and stream telemetry |
-| `GET` | `/status` | Authenticated | Current camera settings |
+| `GET` | `/status` | Open | Current camera settings |
 | `GET` | `/capture` | Open | One JPEG snapshot |
-| `POST` | `/control?var=<name>&val=<value>` | Authenticated, same origin | Update one validated camera setting |
-| `POST` | `/stream-stop` | Authenticated, same origin | Disconnect all MJPEG consumers |
+| `POST` | `/control?var=<name>&val=<value>` | Same origin | Update one validated camera setting |
+| `POST` | `/stream-stop` | Same origin | Disconnect all MJPEG consumers |
 
-Authenticated routes expect HTTP Basic credentials. Mutating routes additionally
-require an `Origin` or `Referer` header that matches the camera's own `Host`,
-accept only `POST`, and are limited to one accepted mutation every 250 ms.
+Mutating browser requests require an `Origin` or `Referer` header that matches
+the camera's own `Host`, accept only `POST`, and are limited to one accepted
+mutation every 250 ms. Trusted non-browser IIoT clients may omit those headers.
 
 The multi-client MJPEG stream listens separately on port 81 and stays open so
 existing consumers keep working:
@@ -152,17 +150,14 @@ http://octoprint-cam.local:81/stream
 
 ## Security
 
-The camera is a plain HTTP device on a trusted local network and does not
-terminate TLS, so every host on the segment is able to read the video feed.
+The camera is an unauthenticated plain HTTP device intended for an isolated,
+trusted IIoT network. Every host on the segment can read the video feed and
+invoke the API, so network segmentation and firewall policy are the security
+boundary.
 
-- `CAMERA_ADMIN_USER` and `CAMERA_ADMIN_PASSWORD` in `include/secrets.h` enable
-  HTTP Basic authentication on `/`, `/status`, `/control`, and `/stream-stop`.
-  The comparison uses constant-time comparison and answers `401` with a
-  `WWW-Authenticate` challenge.
 - `/control` and `/stream-stop` accept `POST` only. The camera compares the
   `Origin` (or `Referer`) header against its own `Host` and answers `403` for a
-  foreign origin, which blocks CSRF from another site even though the browser
-  replays cached Basic credentials.
+  foreign browser origin, which blocks cross-site requests.
 - Mutations are rate limited to one accepted change every 250 ms, and numeric
   values go through a strict integer parser instead of `atoi()`.
 - `/capture` copies the frame out of the camera buffer before writing to the
@@ -172,11 +167,11 @@ terminate TLS, so every host on the segment is able to read the video feed.
   stream task.
 - Responses no longer send `Access-Control-Allow-Origin: *`. The interface also
   sets `X-Content-Type-Options`, `X-Frame-Options`, and `Referrer-Policy`.
-- `/stream`, `/capture`, and `/health` stay open for OctoPrint, MotionEye, and
-  other LAN consumers. Anyone on the network can read them.
+- All endpoints stay open for OctoPrint, MotionEye, and other IIoT consumers.
 
-Known residual risks: no TLS, no secure boot or flash encryption, and no
-authentication on the snapshot and stream endpoints.
+Known residual risks: no TLS, no application authentication, no secure boot,
+and no flash encryption. Do not expose the device directly to an untrusted LAN
+or the Internet.
 
 ## Architecture
 

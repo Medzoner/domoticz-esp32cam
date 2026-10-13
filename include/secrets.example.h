@@ -18,10 +18,3 @@
 // Passphrase of the Wi-Fi setup access point. Leave it empty to publish an
 // open access point instead. Change this value before sharing the firmware.
 #define CAMERA_SETUP_AP_PASSWORD "change-me-setup"
-
-// Administrative credentials for HTTP Basic authentication on the control
-// interface (/, /status, /control, /stream-stop). Leave the password empty to
-// disable authentication, which is only acceptable on a trusted lab network.
-// Change these values before sharing the firmware.
-#define CAMERA_ADMIN_USER "admin"
-#define CAMERA_ADMIN_PASSWORD "change-me-admin"

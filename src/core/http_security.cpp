@@ -2,15 +2,13 @@
 
 #include <cerrno>
 #include <climits>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
 namespace app::core::security {
 namespace {
-
-constexpr char kBase64Alphabet[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 char lowerAscii(char character) {
   if (character >= 'A' && character <= 'Z') {
@@ -74,49 +72,6 @@ void stripDefaultHttpPort(char* value) {
 }
 
 }  // namespace
-
-std::size_t base64Encode(const char* input, std::size_t length, char* output,
-                         std::size_t capacity) {
-  if (output == nullptr || capacity == 0) {
-    return 0;
-  }
-  if (input == nullptr && length > 0) {
-    return 0;
-  }
-  std::size_t written = 0;
-  for (std::size_t index = 0; index < length; index += 3) {
-    unsigned int block = static_cast<unsigned char>(input[index]) << 16;
-    if (index + 1 < length) {
-      block |= static_cast<unsigned char>(input[index + 1]) << 8;
-    }
-    if (index + 2 < length) {
-      block |= static_cast<unsigned char>(input[index + 2]);
-    }
-    if (written + 5 > capacity) {
-      return 0;
-    }
-    output[written++] = kBase64Alphabet[(block >> 18) & 0x3F];
-    output[written++] = kBase64Alphabet[(block >> 12) & 0x3F];
-    output[written++] =
-        index + 1 < length ? kBase64Alphabet[(block >> 6) & 0x3F] : '=';
-    output[written++] = index + 2 < length ? kBase64Alphabet[block & 0x3F] : '=';
-  }
-  output[written] = '\0';
-  return written;
-}
-
-bool constantTimeEquals(const char* left, std::size_t leftLength,
-                        const char* right, std::size_t rightLength) {
-  if (left == nullptr || right == nullptr || leftLength != rightLength) {
-    return false;
-  }
-  unsigned char difference = 0;
-  for (std::size_t index = 0; index < leftLength; ++index) {
-    difference |= static_cast<unsigned char>(left[index]) ^
-                  static_cast<unsigned char>(right[index]);
-  }
-  return difference == 0;
-}
 
 bool parseInteger(const char* text, int& value) {
   if (text == nullptr || text[0] == '\0') {

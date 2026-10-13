@@ -209,41 +209,6 @@ void testDecidesBootMode() {
                     static_cast<int>(provisioning::decideBootMode(true, true)));
 }
 
-void testEncodesBasicAuthorizationValue() {
-  char output[32]{};
-  TEST_ASSERT_EQUAL_UINT32(
-      16, app::core::security::base64Encode("admin:secret", 12, output,
-                                            sizeof(output)));
-  TEST_ASSERT_EQUAL_STRING("YWRtaW46c2VjcmV0", output);
-
-  char padded[8]{};
-  TEST_ASSERT_EQUAL_UINT32(
-      4, app::core::security::base64Encode("a", 1, padded, sizeof(padded)));
-  TEST_ASSERT_EQUAL_STRING("YQ==", padded);
-  TEST_ASSERT_EQUAL_UINT32(
-      4, app::core::security::base64Encode("ab", 2, padded, sizeof(padded)));
-  TEST_ASSERT_EQUAL_STRING("YWI=", padded);
-}
-
-void testRejectsAnUndersizedBase64Buffer() {
-  char output[4]{};
-  TEST_ASSERT_EQUAL_UINT32(
-      0, app::core::security::base64Encode("admin:secret", 12, output,
-                                           sizeof(output)));
-  TEST_ASSERT_EQUAL_UINT32(
-      0, app::core::security::base64Encode(nullptr, 12, output,
-                                           sizeof(output)));
-}
-
-void testComparesAuthorizationValuesInConstantTime() {
-  using app::core::security::constantTimeEquals;
-  TEST_ASSERT_TRUE(constantTimeEquals("abc", 3, "abc", 3));
-  TEST_ASSERT_FALSE(constantTimeEquals("abc", 3, "abd", 3));
-  TEST_ASSERT_FALSE(constantTimeEquals("abc", 3, "ab", 2));
-  TEST_ASSERT_FALSE(constantTimeEquals(nullptr, 0, "abc", 3));
-  TEST_ASSERT_FALSE(constantTimeEquals("abc", 3, nullptr, 0));
-}
-
 void testRejectsNonNumericControlValues() {
   using app::core::security::parseInteger;
   int value = -1;
@@ -299,9 +264,6 @@ int main(int, char**) {
   RUN_TEST(testValidatesProvisioningSecrets);
   RUN_TEST(testRecognizesCaptivePortalProbes);
   RUN_TEST(testDecidesBootMode);
-  RUN_TEST(testEncodesBasicAuthorizationValue);
-  RUN_TEST(testRejectsAnUndersizedBase64Buffer);
-  RUN_TEST(testComparesAuthorizationValuesInConstantTime);
   RUN_TEST(testRejectsNonNumericControlValues);
   RUN_TEST(testAcceptsRequestsFromTheCameraOrigin);
   return UNITY_END();

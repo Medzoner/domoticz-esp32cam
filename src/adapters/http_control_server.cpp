@@ -15,17 +15,6 @@
 #include "core/http_security.h"
 #include "ui/index_html.h"
 
-// Administrative credentials used for HTTP Basic authentication. Both macros
-// come from include/secrets.h (gitignored). The fallbacks keep older local
-// copies compiling, with authentication switched off until they are added.
-#include "secrets.h"
-#ifndef CAMERA_ADMIN_USER
-#define CAMERA_ADMIN_USER "admin"
-#endif
-#ifndef CAMERA_ADMIN_PASSWORD
-#define CAMERA_ADMIN_PASSWORD ""
-#endif
-
 namespace app::adapters {
 namespace {
 
@@ -37,18 +26,13 @@ constexpr char kCacheControl[] = "no-store, no-cache, must-revalidate";
 
 // httpd_resp_set_status() and httpd_resp_set_hdr() keep the pointer they are
 // given, so every status line and header value must have static storage.
-constexpr char kStatusUnauthorized[] = "401 Unauthorized";
 constexpr char kStatusForbidden[] = "403 Forbidden";
 constexpr char kStatusBadRequest[] = "400 Bad Request";
 constexpr char kStatusTooManyRequests[] = "429 Too Many Requests";
 constexpr char kStatusInternalServerError[] = "500 Internal Server Error";
-constexpr char kWwwAuthenticateHeader[] = "WWW-Authenticate";
-constexpr char kWwwAuthenticateValue[] =
-    "Basic realm=\"ESP32-CAM\", charset=\"UTF-8\"";
 constexpr char kContentDispositionHeader[] = "Content-Disposition";
 constexpr char kContentDispositionValue[] = "inline; filename=capture.jpg";
 
-constexpr char kMessageUnauthorized[] = "authentication required";
 constexpr char kMessageCrossOrigin[] = "cross-origin request rejected";
 constexpr char kMessageTooManyRequests[] = "too many mutations, slow down";
 constexpr char kMessageBadQuery[] = "var and val are required";
@@ -60,8 +44,6 @@ constexpr std::size_t kQueryCapacity = 96;
 constexpr std::size_t kVariableCapacity = 32;
 constexpr std::size_t kValueCapacity = 16;
 constexpr std::size_t kHeaderValueCapacity = 192;
-constexpr std::size_t kCredentialCapacity = 128;
-constexpr std::size_t kEncodedCapacity = 176;
 
 std::size_t copyHeader(httpd_req_t* request, const char* name, char* buffer,
                        std::size_t capacity) {
@@ -83,8 +65,6 @@ HttpControlServer::HttpControlServer(ports::CameraPort& camera,
     : camera_(camera), streams_(streams) {}
 
 bool HttpControlServer::begin() {
-  prepareAuthentication();
-
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = config::kControlPort;
   config.max_open_sockets = config::kMaxControlClients;
@@ -111,56 +91,7 @@ bool HttpControlServer::begin() {
   return true;
 }
 
-void HttpControlServer::prepareAuthentication() {
-  authenticationEnabled_ = false;
-  expectedAuthorizationLength_ = 0;
-
-  if (CAMERA_ADMIN_PASSWORD[0] == '\0') {
-    Serial.println(
-        "[http] CAMERA_ADMIN_PASSWORD is empty, HTTP authentication disabled");
-    return;
-  }
-
-  char credentials[kCredentialCapacity];
-  const int credentialsLength =
-      snprintf(credentials, sizeof(credentials), "%s:%s", CAMERA_ADMIN_USER,
-               CAMERA_ADMIN_PASSWORD);
-  if (credentialsLength <= 0 ||
-      credentialsLength >= static_cast<int>(sizeof(credentials))) {
-    Serial.println(
-        "[http] admin credentials too long, HTTP authentication disabled");
-    return;
-  }
-
-  char encoded[kEncodedCapacity];
-  const std::size_t encodedLength = core::security::base64Encode(
-      credentials, static_cast<std::size_t>(credentialsLength), encoded,
-      sizeof(encoded));
-  if (encodedLength == 0) {
-    Serial.println(
-        "[http] cannot encode admin credentials, HTTP authentication disabled");
-    return;
-  }
-
-  const int written = snprintf(expectedAuthorization_,
-                               sizeof(expectedAuthorization_), "Basic %s",
-                               encoded);
-  if (written <= 0 ||
-      written >= static_cast<int>(sizeof(expectedAuthorization_))) {
-    Serial.println(
-        "[http] admin credentials too long, HTTP authentication disabled");
-    return;
-  }
-  expectedAuthorizationLength_ = static_cast<std::size_t>(written);
-  authenticationEnabled_ = true;
-  Serial.println("[http] HTTP authentication enabled");
-}
-
 esp_err_t HttpControlServer::indexHandler(httpd_req_t* request) {
-  const HttpAccess access = readAccess(request);
-  if (access != HttpAccess::kGranted) {
-    return denyAccess(request, access);
-  }
   httpd_resp_set_type(request, kHtmlContentType);
   setCommonHeaders(request);
   return httpd_resp_send(request, ui::kIndexHtml, HTTPD_RESP_USE_STRLEN);
@@ -200,10 +131,6 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
 }
 
 esp_err_t HttpControlServer::statusHandler(httpd_req_t* request) {
-  const HttpAccess access = readAccess(request);
-  if (access != HttpAccess::kGranted) {
-    return denyAccess(request, access);
-  }
   core::CameraStatus status = owner(request).camera_.status();
   status.quality = owner(request).streams_.baseJpegQuality();
   char response[256];
@@ -316,30 +243,9 @@ esp_err_t HttpControlServer::stopStreamsHandler(httpd_req_t* request) {
   return httpd_resp_sendstr(request, "{\"stopping\":true}");
 }
 
-HttpAccess HttpControlServer::readAccess(httpd_req_t* request) {
-  HttpControlServer& self = owner(request);
-  if (!self.authenticationEnabled_) {
-    return HttpAccess::kGranted;
-  }
-  char header[kHeaderValueCapacity]{};
-  if (copyHeader(request, "Authorization", header, sizeof(header)) == 0 ||
-      !core::security::constantTimeEquals(header, strlen(header),
-                                          self.expectedAuthorization_,
-                                          self.expectedAuthorizationLength_)) {
-    return HttpAccess::kUnauthorized;
-  }
-  return HttpAccess::kGranted;
-}
-
 HttpAccess HttpControlServer::mutationAccess(httpd_req_t* request) {
-  const HttpAccess access = readAccess(request);
-  if (access != HttpAccess::kGranted) {
-    return access;
-  }
-
-  // Without an Origin/Referer check, any page opened on the local network
-  // could POST to /control even when credentials are required, because the
-  // browser would replay the cached Basic credentials for us.
+  // Browser mutations are accepted only from the camera UI. Requests without
+  // browser origin headers remain available to trusted IIoT clients.
   char origin[kHeaderValueCapacity]{};
   char referer[kHeaderValueCapacity]{};
   char host[kHeaderValueCapacity]{};
@@ -366,8 +272,6 @@ HttpAccess HttpControlServer::mutationAccess(httpd_req_t* request) {
 
 esp_err_t HttpControlServer::denyAccess(httpd_req_t* request, HttpAccess access) {
   switch (access) {
-    case HttpAccess::kUnauthorized:
-      return rejectUnauthorized(request);
     case HttpAccess::kCrossOrigin:
       return reject(request, kStatusForbidden, kMessageCrossOrigin);
     case HttpAccess::kRateLimited:
@@ -398,14 +302,6 @@ esp_err_t HttpControlServer::reject(httpd_req_t* request, const char* status,
   httpd_resp_set_type(request, kTextContentType);
   httpd_resp_set_hdr(request, "Cache-Control", kCacheControl);
   return httpd_resp_send(request, message, HTTPD_RESP_USE_STRLEN);
-}
-
-esp_err_t HttpControlServer::rejectUnauthorized(httpd_req_t* request) {
-  httpd_resp_set_status(request, kStatusUnauthorized);
-  httpd_resp_set_type(request, kTextContentType);
-  httpd_resp_set_hdr(request, kWwwAuthenticateHeader, kWwwAuthenticateValue);
-  httpd_resp_set_hdr(request, "Cache-Control", kCacheControl);
-  return httpd_resp_send(request, kMessageUnauthorized, HTTPD_RESP_USE_STRLEN);
 }
 
 httpd_uri_t HttpControlServer::makeUri(
