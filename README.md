@@ -139,7 +139,7 @@ The control server listens on port 80:
 
 Mutating browser requests require an `Origin` or `Referer` header that matches
 the camera's own `Host`, accept only `POST`, and are limited to one accepted
-mutation every 250 ms. Trusted non-browser IIoT clients may omit those headers.
+mutation every 250 ms. Trusted non-browser IoT clients may omit those headers.
 
 The multi-client MJPEG stream listens separately on port 81 and stays open so
 existing consumers keep working:
@@ -151,7 +151,7 @@ http://octoprint-cam.local:81/stream
 ## Security
 
 The camera is an unauthenticated plain HTTP device intended for an isolated,
-trusted IIoT network. Every host on the segment can read the video feed and
+trusted IoT network. Every host on the segment can read the video feed and
 invoke the API, so network segmentation and firewall policy are the security
 boundary.
 
@@ -167,7 +167,7 @@ boundary.
   stream task.
 - Responses no longer send `Access-Control-Allow-Origin: *`. The interface also
   sets `X-Content-Type-Options`, `X-Frame-Options`, and `Referrer-Policy`.
-- All endpoints stay open for OctoPrint, MotionEye, and other IIoT consumers.
+- All endpoints stay open for OctoPrint, MotionEye, and other IoT consumers.
 
 Known residual risks: no TLS, no application authentication, no secure boot,
 and no flash encryption. Do not expose the device directly to an untrusted LAN

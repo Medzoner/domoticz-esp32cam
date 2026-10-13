@@ -245,7 +245,7 @@ esp_err_t HttpControlServer::stopStreamsHandler(httpd_req_t* request) {
 
 HttpAccess HttpControlServer::mutationAccess(httpd_req_t* request) {
   // Browser mutations are accepted only from the camera UI. Requests without
-  // browser origin headers remain available to trusted IIoT clients.
+  // browser origin headers remain available to trusted IoT clients.
   char origin[kHeaderValueCapacity]{};
   char referer[kHeaderValueCapacity]{};
   char host[kHeaderValueCapacity]{};
