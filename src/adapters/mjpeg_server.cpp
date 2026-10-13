@@ -92,8 +92,9 @@ void MjpegServer::acceptClient() {
     candidate.stop();
     return;
   }
-  while (candidate.available()) {
-    candidate.read();
+  if (!drainRequestHeaders(candidate)) {
+    candidate.stop();
+    return;
   }
   if (!core::mjpeg::isStreamRequestLine(requestLine)) {
     candidate.print(core::mjpeg::kNotFoundResponse);
@@ -162,6 +163,39 @@ bool MjpegServer::readRequestLine(WiFiClient& client, char* destination,
         return false;
       }
       destination[length++] = static_cast<char>(value);
+    }
+  }
+  return false;
+}
+
+bool MjpegServer::drainRequestHeaders(WiFiClient& client) {
+  // Reads the request headers up to and including the blank line that ends
+  // them. Both the elapsed time and the number of bytes are bounded so that a
+  // client streaming data forever can never stall the stream task.
+  const uint32_t deadline = millis() + config::kClientReadTimeoutMs;
+  std::size_t budget = config::kMaximumRequestHeaderBytes;
+  bool lineHasContent = false;
+
+  while (static_cast<int32_t>(millis() - deadline) < 0) {
+    if (client.available() <= 0) {
+      vTaskDelay(1);
+      continue;
+    }
+    const int value = client.read();
+    if (value < 0) {
+      return false;
+    }
+    if (budget == 0) {
+      return false;
+    }
+    --budget;
+    if (value == '\n') {
+      if (!lineHasContent) {
+        return true;
+      }
+      lineHasContent = false;
+    } else if (value != '\r') {
+      lineHasContent = true;
     }
   }
   return false;

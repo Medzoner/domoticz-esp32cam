@@ -13,6 +13,9 @@ consumers such as MotionEye, Home Assistant, and OctoPrint.
 - Health telemetry for Wi-Fi, heap usage, stream rate, sessions, and task stack
   headroom
 - Static IPv4 configuration, DHCP hostname, and mDNS discovery
+- First-boot provisioning portal with network scanning and captive portal
+  detection
+- HTTP Basic authentication and same-origin checks on the control interface
 - Native unit tests and Cppcheck static analysis
 - GitHub Actions CI and tagged firmware releases
 
@@ -69,9 +72,32 @@ cp include/secrets.example.h include/secrets.h
 Set the Wi-Fi credentials, hostname, static address, and gateway in
 `include/secrets.h`. This file is ignored by Git and must never be committed.
 
+The same file also holds `CAMERA_SETUP_AP_PASSWORD` for the onboarding access
+point and `CAMERA_ADMIN_USER` / `CAMERA_ADMIN_PASSWORD` for HTTP Basic
+authentication on the control interface. An empty admin password disables
+authentication, which is only acceptable on a trusted lab network.
+
 The default hostname in the example configuration is `octoprint-cam`. Once the
 device is online, supported clients can reach it at
 `http://octoprint-cam.local`.
+
+## First Boot Onboarding
+
+The firmware starts a provisioning portal instead of the camera stack when
+`WIFI_SSID` still holds the placeholder `your-wifi`, or when the stored
+credentials fail to associate:
+
+1. The board publishes the `<hostname>-setup` access point (`esp32cam-setup` as
+   a fallback), protected by `CAMERA_SETUP_AP_PASSWORD` when a value is set.
+2. Connect from a phone or laptop and open any address. A wildcard DNS server
+   redirects the request to the portal, so no URL has to be remembered.
+3. Use **Scan networks** to list nearby access points, then submit the network
+   name and passphrase. The form accepts open networks and WPA2 passphrases of
+   8 to 63 characters, or a 64 character hexadecimal key.
+4. The camera stores the credentials in NVS and reboots into station mode.
+
+Provisioning stops after 2.5 seconds once credentials are saved, or after ten
+minutes without a submission when the portal was opened by a failed connection.
 
 ## Local Development
 
@@ -104,20 +130,53 @@ command line when needed.
 
 The control server listens on port 80:
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/` | Responsive camera interface |
-| `GET` | `/health` | Device, Wi-Fi, memory, and stream telemetry |
-| `GET` | `/status` | Current camera settings |
-| `GET` | `/capture` | One JPEG snapshot |
-| `GET` | `/control?var=<name>&val=<value>` | Update one validated camera setting |
-| `GET` | `/stream-stop` | Disconnect all MJPEG consumers |
+| Method | Path | Access | Description |
+|---|---|---|---|
+| `GET` | `/` | Authenticated | Responsive camera interface |
+| `GET` | `/health` | Open | Device, Wi-Fi, memory, and stream telemetry |
+| `GET` | `/status` | Authenticated | Current camera settings |
+| `GET` | `/capture` | Open | One JPEG snapshot |
+| `POST` | `/control?var=<name>&val=<value>` | Authenticated, same origin | Update one validated camera setting |
+| `POST` | `/stream-stop` | Authenticated, same origin | Disconnect all MJPEG consumers |
 
-The multi-client MJPEG stream listens separately on port 81:
+Authenticated routes expect HTTP Basic credentials. Mutating routes additionally
+require an `Origin` or `Referer` header that matches the camera's own `Host`,
+accept only `POST`, and are limited to one accepted mutation every 250 ms.
+
+The multi-client MJPEG stream listens separately on port 81 and stays open so
+existing consumers keep working:
 
 ```text
 http://octoprint-cam.local:81/stream
 ```
+
+## Security
+
+The camera is a plain HTTP device on a trusted local network and does not
+terminate TLS, so every host on the segment is able to read the video feed.
+
+- `CAMERA_ADMIN_USER` and `CAMERA_ADMIN_PASSWORD` in `include/secrets.h` enable
+  HTTP Basic authentication on `/`, `/status`, `/control`, and `/stream-stop`.
+  The comparison uses constant-time comparison and answers `401` with a
+  `WWW-Authenticate` challenge.
+- `/control` and `/stream-stop` accept `POST` only. The camera compares the
+  `Origin` (or `Referer`) header against its own `Host` and answers `403` for a
+  foreign origin, which blocks CSRF from another site even though the browser
+  replays cached Basic credentials.
+- Mutations are rate limited to one accepted change every 250 ms, and numeric
+  values go through a strict integer parser instead of `atoi()`.
+- `/capture` copies the frame out of the camera buffer before writing to the
+  network, so a slow client can no longer hold the camera mutex.
+- The MJPEG accept path drains request headers under a 250 ms deadline and a
+  1 KiB byte budget, so a client that streams headers forever cannot block the
+  stream task.
+- Responses no longer send `Access-Control-Allow-Origin: *`. The interface also
+  sets `X-Content-Type-Options`, `X-Frame-Options`, and `Referrer-Policy`.
+- `/stream`, `/capture`, and `/health` stay open for OctoPrint, MotionEye, and
+  other LAN consumers. Anyone on the network can read them.
+
+Known residual risks: no TLS, no secure boot or flash encryption, and no
+authentication on the snapshot and stream endpoints.
 
 ## Architecture
 
@@ -141,6 +200,11 @@ Dependencies point from adapters toward the core and ports:
 4. runs native and ESP32 Cppcheck analysis;
 5. builds the ESP32 firmware; and
 6. uploads firmware artifacts for 14 days.
+
+Third-party actions are pinned to full commit SHAs with the release version in
+a trailing comment. The release workflow grants `contents: write` only to the
+publishing job and validates the release tag against `v<major>.<minor>.<patch>`
+before creating anything.
 
 ## Releases
 

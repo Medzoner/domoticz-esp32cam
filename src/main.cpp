@@ -4,8 +4,10 @@
 #include "adapters/esp32_camera.h"
 #include "adapters/http_control_server.h"
 #include "adapters/mjpeg_server.h"
+#include "adapters/provisioning_portal.h"
 #include "adapters/wifi_station.h"
 #include "config/app_config.h"
+#include "core/provisioning_rules.h"
 #include "secrets.h"
 
 namespace {
@@ -24,6 +26,18 @@ app::adapters::HttpControlServer controlServer(camera, streams);
   }
 }
 
+// Blocks until the camera stores new credentials, then restarts. When there is
+// nothing to retry the portal stays open instead of rebooting forever.
+[[noreturn]] void runOnboardingPortal(bool canRetry) {
+  app::adapters::ProvisioningPortal portal;
+  if (!portal.begin(canRetry)) {
+    restartAfterFailure("Onboarding portal initialization failed");
+  }
+  while (true) {
+    portal.loop();
+  }
+}
+
 }  // namespace
 
 void setup() {
@@ -34,9 +48,17 @@ void setup() {
   if (!camera.begin()) {
     restartAfterFailure("Camera initialization failed");
   }
-  while (!wifi.connect()) {
-    Serial.println("WiFi connection failed, retrying");
-    delay(5000);
+
+  const bool hasCredentials = wifi.begin();
+  const bool connected =
+      hasCredentials &&
+      wifi.connectWithRetries(app::config::kWifiConnectAttempts);
+  if (app::core::provisioning::decideBootMode(hasCredentials, connected) ==
+      app::core::provisioning::BootMode::kProvisioning) {
+    Serial.println(hasCredentials
+                       ? "WiFi connection failed, opening the setup portal"
+                       : "No WiFi configuration found, opening the setup portal");
+    runOnboardingPortal(hasCredentials);
   }
 
   if (MDNS.begin(CAMERA_HOSTNAME)) {

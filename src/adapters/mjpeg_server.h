@@ -40,6 +40,7 @@ class MjpegServer {
                 std::size_t length);
   bool readRequestLine(WiFiClient& client, char* destination,
                        std::size_t capacity);
+  bool drainRequestHeaders(WiFiClient& client);
   void refreshClientStats();
   void broadcastFrame();
   void refreshPerformanceStats();
