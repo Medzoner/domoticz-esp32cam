@@ -109,7 +109,8 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
   }
   char response[640];
   snprintf(response, sizeof(response),
-           "{\"status\":\"ok\",\"uptime_ms\":%lu,\"free_heap\":%u,"
+           "{\"status\":\"ok\",\"uptime_ms\":%lu,\"heap_size\":%u,"
+           "\"free_heap\":%u,\"psram_size\":%u,\"free_psram\":%u,"
            "\"min_free_heap\":%u,\"max_alloc_heap\":%u,\"rssi\":%d,"
            "\"stream_server\":%s,\"stream_active\":%s,"
            "\"stream_sessions\":%u,\"stream_frames\":%u,"
@@ -117,8 +118,9 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
            "\"stream_delivery_ms\":%u,\"stream_target_fps\":%u,"
            "\"stream_quality_offset\":%u,\"stream_pressure\":%u,"
            "\"stream_clients\":%u,\"stream_peer\":\"%s\"}",
-           millis(), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
-           ESP.getMaxAllocHeap(), WiFi.RSSI(),
+           millis(), ESP.getHeapSize(), ESP.getFreeHeap(), ESP.getPsramSize(),
+           ESP.getFreePsram(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(),
+           WiFi.RSSI(),
            stats.started ? "true" : "false",
            stats.clients > 0 ? "true" : "false", stats.sessions, stats.frames,
            static_cast<unsigned int>(stats.framesPerSecondTimes10 / 10),
