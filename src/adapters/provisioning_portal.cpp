@@ -7,7 +7,7 @@
 #include "config/app_config.h"
 #include "core/http_routes.h"
 #include "secrets.h"
-#include "ui/onboarding_html.h"
+#include "ui_assets.h"
 
 // Optional passphrase for the setup access point. When it is empty the access
 // point is open, which is acceptable because the portal only exists until the

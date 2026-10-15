@@ -2,9 +2,12 @@
 #include <ESPmDNS.h>
 
 #include "adapters/esp32_camera.h"
+#include "adapters/camera_auth.h"
 #include "adapters/http_control_server.h"
 #include "adapters/mjpeg_server.h"
 #include "adapters/provisioning_portal.h"
+#include "adapters/recording_playback_server.h"
+#include "adapters/sd_mjpeg_recorder.h"
 #include "adapters/wifi_station.h"
 #include "config/app_config.h"
 #include "core/provisioning_rules.h"
@@ -13,9 +16,13 @@
 namespace {
 
 app::adapters::Esp32Camera camera;
+app::adapters::CameraAuth authentication;
+app::adapters::SdMjpegRecorder recorder;
 app::adapters::WifiStation wifi;
-app::adapters::MjpegServer streams(camera);
-app::adapters::HttpControlServer controlServer(camera, streams);
+app::adapters::MjpegServer streams(camera, recorder, authentication);
+app::adapters::RecordingPlaybackServer playback(recorder, authentication);
+app::adapters::HttpControlServer controlServer(camera, streams, recorder,
+                                               authentication);
 
 [[noreturn]] void restartAfterFailure(const char* message) {
   Serial.println(message);
@@ -45,6 +52,10 @@ void setup() {
   Serial.setDebugOutput(true);
   Serial.println("\nESP32-CAM starting");
 
+  if (!authentication.begin()) {
+    restartAfterFailure("Invalid authentication configuration");
+  }
+
   if (!camera.begin()) {
     restartAfterFailure("Camera initialization failed");
   }
@@ -65,6 +76,8 @@ void setup() {
     MDNS.addService(app::config::kMdnsService, app::config::kMdnsProtocol,
                     app::config::kControlPort);
   }
+  recorder.begin();
+  playback.begin();
   streams.begin();
   if (!controlServer.begin()) {
     restartAfterFailure("HTTP server initialization failed");

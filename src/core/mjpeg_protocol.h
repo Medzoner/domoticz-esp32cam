@@ -12,7 +12,6 @@ inline constexpr char kContentType[] =
 inline constexpr char kSuccessResponse[] =
     "HTTP/1.1 200 OK\r\n"
     "Content-Type: multipart/x-mixed-replace;boundary=frame-boundary\r\n"
-    "Access-Control-Allow-Origin: *\r\n"
     "Cache-Control: no-store, no-cache, must-revalidate\r\n"
     "Pragma: no-cache\r\n"
     "Expires: 0\r\n"
@@ -21,6 +20,10 @@ inline constexpr char kNotFoundResponse[] =
     "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
 inline constexpr char kUnavailableResponse[] =
     "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n";
+inline constexpr char kUnauthorizedResponse[] =
+    "HTTP/1.1 401 Unauthorized\r\n"
+    "WWW-Authenticate: Basic realm=\"ESP32-CAM\", charset=\"UTF-8\"\r\n"
+    "Connection: close\r\nContent-Length: 0\r\n\r\n";
 
 bool isStreamRequestLine(const char* requestLine);
 std::size_t formatPartPreamble(char* destination, std::size_t capacity,

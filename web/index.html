@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10151f">
+  <title>ESP32-CAM</title>
+  {{STYLE}}
+</head>
+<body><main>
+  <header class="top"><div><h1>ESP32-CAM</h1><div class="footer">Multi-client MJPEG streamer</div></div><div id="health" class="badge">Connecting…</div></header>
+  <section class="layout">
+    <article class="card">
+      <div class="viewport"><span id="placeholder" class="placeholder">Stream stopped</span><img id="camera" alt="Camera stream" decoding="async" fetchpriority="high" hidden></div>
+      <div class="actions"><button id="start" class="primary">Start stream</button><button id="stop">Stop</button><button id="still">Capture still</button><button id="stopAll" class="danger">Disconnect all streams</button></div>
+      <div class="endpoints"><h2>Direct links</h2><div class="endpoint"><span>MJPEG stream</span><a id="streamLink" target="_blank" rel="noopener noreferrer"></a></div><div class="endpoint"><span>JPEG snapshot</span><a id="snapshotLink" target="_blank" rel="noopener noreferrer"></a></div></div>
+    </article>
+    <aside class="card">
+      <h2>Camera settings</h2>
+      <div class="field"><label for="size">Resolution</label><select id="size"><option value="5">QVGA · 320×240</option><option value="6">CIF · 400×296</option><option value="8">VGA · 640×480</option><option value="10">SVGA · 800×600</option><option value="12">UXGA · 1600×1200</option></select></div>
+      <div class="field"><label for="quality">JPEG quality</label><output id="qualityValue"></output><input id="quality" type="range" min="4" max="40" value="12"></div>
+      <div class="field"><label for="brightness">Brightness</label><output id="brightnessValue"></output><input id="brightness" type="range" min="-2" max="2" value="0"></div>
+      <div class="field"><label for="contrast">Contrast</label><output id="contrastValue"></output><input id="contrast" type="range" min="-2" max="2" value="0"></div>
+      <div class="field"><label><input id="vflip" type="checkbox"> Flip vertically</label></div>
+      <div class="field"><label><input id="hmirror" type="checkbox"> Mirror horizontally</label></div>
+      <hr>
+      <h2>System health</h2><dl><dt>Uptime</dt><dd id="uptime">–</dd><dt>Stream server</dt><dd id="server">–</dd><dt>Stream state</dt><dd id="streamState">–</dd><dt>Clients</dt><dd id="clients">–</dd><dt>Peer</dt><dd id="peer">–</dd><dt>Sessions</dt><dd id="sessions">–</dd><dt>Frames</dt><dd id="frames">–</dd><dt>Frame rate</dt><dd id="fps">–</dd><dt>Adaptive profile</dt><dd id="profile">–</dd><dt>Delivery time</dt><dd id="delivery">–</dd><dt>Wi-Fi</dt><dd id="rssi">–</dd><dt>Total memory</dt><dd id="totalMemory">–</dd><dt>Free memory</dt><dd id="freeMemory">–</dd><dt>Internal heap</dt><dd id="heap">–</dd><dt>PSRAM</dt><dd id="psram">–</dd><dt>Minimum free heap</dt><dd id="minHeap">–</dd><dt>Largest allocation</dt><dd id="maxAlloc">–</dd><dt>Stack headroom</dt><dd id="stack">–</dd></dl><div id="lastUpdate" class="status-meta">Waiting for health data…</div>
+    </aside>
+  </section>
+  <section id="recordingPanel" class="card recording-card" hidden>
+    <div class="recording-head">
+      <div><h2>SD recordings</h2><div id="recordingStatus" class="muted">Checking the SD card…</div></div>
+      <div class="actions compact"><button id="recordStart" class="primary">Start recording</button><button id="recordStop">Stop recording</button><button id="recordRefresh">Refresh files</button></div>
+    </div>
+    <dl class="recording-stats"><dt>Recorded</dt><dd id="recordedSize">–</dd><dt>Frames</dt><dd id="recordedFrames">–</dd><dt>SD space</dt><dd id="sdSpace">–</dd></dl>
+    <div class="recording-layout">
+      <div class="viewport playback"><span id="playbackPlaceholder" class="placeholder">Choose a recording</span><img id="playback" alt="Recorded camera stream" hidden></div>
+      <div><div class="actions compact"><button id="playbackStop">Stop playback</button></div><div id="recordingFiles" class="file-list"><span class="muted">No files loaded.</span></div></div>
+    </div>
+  </section>
+</main>
+{{SCRIPT}}
+</body></html>

@@ -2,11 +2,17 @@
 
 #include <Arduino.h>
 
+#include "core/basic_auth.h"
 #include "core/mjpeg_protocol.h"
 
 namespace app::adapters {
-MjpegServer::MjpegServer(ports::CameraPort& camera)
-    : camera_(camera), server_(config::kStreamPort) {}
+MjpegServer::MjpegServer(ports::CameraPort& camera,
+                         ports::RecordingPort& recordings,
+                         ports::AuthenticationPort& authentication)
+    : camera_(camera),
+      recordings_(recordings),
+      authentication_(authentication),
+      server_(config::kStreamPort) {}
 
 void MjpegServer::begin() {
   xTaskCreatePinnedToCore(taskEntry, config::kStreamTaskName,
@@ -51,6 +57,7 @@ void MjpegServer::run() {
   started_ = true;
 
   for (;;) {
+    recordings_.service();
     if (stopRequested_) {
       for (std::size_t index = 0; index < config::kMaxStreamClients;
            ++index) {
@@ -62,7 +69,7 @@ void MjpegServer::run() {
     acceptClient();
     refreshClientStats();
     refreshPerformanceStats();
-    if (clientCount_ == 0) {
+    if (clientCount_ == 0 && !recordings_.wantsFrames()) {
       vTaskDelay(pdMS_TO_TICKS(config::kIdleDelayMs));
       continue;
     }
@@ -174,7 +181,10 @@ bool MjpegServer::drainRequestHeaders(WiFiClient& client) {
   // client streaming data forever can never stall the stream task.
   const uint32_t deadline = millis() + config::kClientReadTimeoutMs;
   std::size_t budget = config::kMaximumRequestHeaderBytes;
-  bool lineHasContent = false;
+  char authorization[192]{};
+  char cookie[192]{};
+  char line[256]{};
+  std::size_t lineLength = 0;
 
   while (static_cast<int32_t>(millis() - deadline) < 0) {
     if (client.available() <= 0) {
@@ -190,12 +200,24 @@ bool MjpegServer::drainRequestHeaders(WiFiClient& client) {
     }
     --budget;
     if (value == '\n') {
-      if (!lineHasContent) {
-        return true;
+      if (lineLength == 0) {
+        const ports::AuthenticationDecision decision = authentication_.authorize(
+            authorization[0] == '\0' ? nullptr : authorization,
+            cookie[0] == '\0' ? nullptr : cookie);
+        if (!decision.granted) {
+          client.print(core::mjpeg::kUnauthorizedResponse);
+        }
+        return decision.granted;
       }
-      lineHasContent = false;
+      line[lineLength] = '\0';
+      core::auth::captureHeader(line, authorization, sizeof(authorization),
+                                cookie, sizeof(cookie));
+      lineLength = 0;
     } else if (value != '\r') {
-      lineHasContent = true;
+      if (lineLength + 1 >= sizeof(line)) {
+        return false;
+      }
+      line[lineLength++] = static_cast<char>(value);
     }
   }
   return false;
@@ -290,6 +312,9 @@ void MjpegServer::broadcastFrame() {
       ++writeFailures_;
       closeClient(index);
     }
+  }
+  if (recordings_.wantsFrames()) {
+    recordings_.appendFrame(frame.data, frame.size);
   }
   camera_.release(frame);
   ++frameCount_;

@@ -3,9 +3,11 @@
 #include <cstring>
 
 #include "core/camera_settings.h"
+#include "core/basic_auth.h"
 #include "core/http_security.h"
 #include "core/mjpeg_protocol.h"
 #include "core/provisioning_rules.h"
+#include "core/recording_rules.h"
 #include "core/stream_adaptation.h"
 
 namespace {
@@ -243,6 +245,73 @@ void testAcceptsRequestsFromTheCameraOrigin() {
   TEST_ASSERT_FALSE(isSameOrigin(nullptr, nullptr, nullptr));
 }
 
+void testSegmentsRecordingsWithoutOverflow() {
+  using app::core::recording::shouldStartNewSegment;
+  TEST_ASSERT_FALSE(shouldStartNewSegment(0, 200, 100));
+  TEST_ASSERT_FALSE(shouldStartNewSegment(80, 20, 100));
+  TEST_ASSERT_TRUE(shouldStartNewSegment(80, 21, 100));
+  TEST_ASSERT_TRUE(shouldStartNewSegment(100, 1, 100));
+  TEST_ASSERT_TRUE(shouldStartNewSegment(UINT64_MAX - 1, 8, UINT64_MAX));
+}
+
+void testFormatsRecordingSegmentPaths() {
+  char path[32]{};
+  TEST_ASSERT_GREATER_THAN(
+      0, app::core::recording::formatSegmentPath(path, sizeof(path), 42));
+  TEST_ASSERT_EQUAL_STRING("/recording-00042.mjr", path);
+  TEST_ASSERT_EQUAL_UINT32(
+      0, app::core::recording::formatSegmentPath(path, 8, 42));
+  TEST_ASSERT_EQUAL_CHAR('\0', path[0]);
+  TEST_ASSERT_EQUAL_UINT32(
+      0, app::core::recording::formatSegmentPath(path, sizeof(path), 0));
+  uint32_t index = 0;
+  TEST_ASSERT_TRUE(app::core::recording::parseSegmentPath(path, index) == false);
+  TEST_ASSERT_TRUE(
+      app::core::recording::parseSegmentPath("/recording-00042.mjr", index));
+  TEST_ASSERT_EQUAL_UINT32(42, index);
+  TEST_ASSERT_FALSE(
+      app::core::recording::parseSegmentPath("recording-42.mjr", index));
+}
+
+void testValidatesOptionalAuthenticationConfiguration() {
+  using app::core::auth::isConfigurationValid;
+  using app::core::auth::isEnabled;
+  TEST_ASSERT_TRUE(isConfigurationValid("", ""));
+  TEST_ASSERT_FALSE(isEnabled("", ""));
+  TEST_ASSERT_TRUE(isConfigurationValid("admin", "strong-password"));
+  TEST_ASSERT_TRUE(isEnabled("admin", "strong-password"));
+  TEST_ASSERT_FALSE(isConfigurationValid("admin", ""));
+  TEST_ASSERT_FALSE(isConfigurationValid("bad:name", "password"));
+}
+
+void testChecksBasicAuthorizationAndSessionCookies() {
+  char authorization[64]{};
+  TEST_ASSERT_GREATER_THAN(
+      0, app::core::auth::formatBasicAuthorization(
+             authorization, sizeof(authorization), "Aladdin", "open sesame"));
+  TEST_ASSERT_EQUAL_STRING("Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==",
+                           authorization);
+  TEST_ASSERT_TRUE(app::core::auth::isBasicAuthorizationValid(
+      authorization, "Aladdin", "open sesame"));
+  TEST_ASSERT_FALSE(app::core::auth::isBasicAuthorizationValid(
+      "Basic invalid", "Aladdin", "open sesame"));
+  TEST_ASSERT_TRUE(app::core::auth::hasSessionCookie(
+      "theme=dark; camera_session=abc123; mode=full", "abc123"));
+  TEST_ASSERT_FALSE(app::core::auth::hasSessionCookie(
+      "camera_session=abc1234", "abc123"));
+}
+
+void testCapturesAuthenticationHeaders() {
+  char authorization[64]{};
+  char cookie[64]{};
+  app::core::auth::captureHeader("authorization: Basic abc=", authorization,
+                                 sizeof(authorization), cookie, sizeof(cookie));
+  app::core::auth::captureHeader("Cookie: camera_session=123", authorization,
+                                 sizeof(authorization), cookie, sizeof(cookie));
+  TEST_ASSERT_EQUAL_STRING("Basic abc=", authorization);
+  TEST_ASSERT_EQUAL_STRING("camera_session=123", cookie);
+}
+
 }  // namespace
 
 int main(int, char**) {
@@ -266,5 +335,10 @@ int main(int, char**) {
   RUN_TEST(testDecidesBootMode);
   RUN_TEST(testRejectsNonNumericControlValues);
   RUN_TEST(testAcceptsRequestsFromTheCameraOrigin);
+  RUN_TEST(testSegmentsRecordingsWithoutOverflow);
+  RUN_TEST(testFormatsRecordingSegmentPaths);
+  RUN_TEST(testValidatesOptionalAuthenticationConfiguration);
+  RUN_TEST(testChecksBasicAuthorizationAndSessionCookies);
+  RUN_TEST(testCapturesAuthenticationHeaders);
   return UNITY_END();
 }

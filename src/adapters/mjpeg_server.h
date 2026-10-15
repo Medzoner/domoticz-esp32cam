@@ -5,6 +5,8 @@
 #include "config/app_config.h"
 #include "core/stream_adaptation.h"
 #include "ports/camera_port.h"
+#include "ports/authentication_port.h"
+#include "ports/recording_port.h"
 
 namespace app::adapters {
 
@@ -24,7 +26,8 @@ struct StreamStats {
 
 class MjpegServer {
  public:
-  explicit MjpegServer(ports::CameraPort& camera);
+  MjpegServer(ports::CameraPort& camera, ports::RecordingPort& recordings,
+              ports::AuthenticationPort& authentication);
   void begin();
   void stopAll();
   void setBaseJpegQuality(uint8_t quality);
@@ -48,6 +51,8 @@ class MjpegServer {
   void applyProfile(const core::StreamProfile& profile);
 
   ports::CameraPort& camera_;
+  ports::RecordingPort& recordings_;
+  ports::AuthenticationPort& authentication_;
   WiFiServer server_;
   WiFiClient clients_[config::kMaxStreamClients];
   volatile bool started_ = false;

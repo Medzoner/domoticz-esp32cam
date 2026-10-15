@@ -9,96 +9,74 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "adapters/http/http_request.h"
+#include "adapters/http/http_response.h"
 #include "config/app_config.h"
 #include "core/camera_settings.h"
 #include "core/http_routes.h"
-#include "core/http_security.h"
-#include "ui/index_html.h"
+#include "ui_assets.h"
 
 namespace app::adapters {
 namespace {
 
-constexpr char kJsonContentType[] = "application/json";
-constexpr char kTextContentType[] = "text/plain; charset=utf-8";
-constexpr char kHtmlContentType[] = "text/html; charset=utf-8";
-constexpr char kJpegContentType[] = "image/jpeg";
-constexpr char kCacheControl[] = "no-store, no-cache, must-revalidate";
-
-// httpd_resp_set_status() and httpd_resp_set_hdr() keep the pointer they are
-// given, so every status line and header value must have static storage.
-constexpr char kStatusForbidden[] = "403 Forbidden";
-constexpr char kStatusBadRequest[] = "400 Bad Request";
-constexpr char kStatusTooManyRequests[] = "429 Too Many Requests";
-constexpr char kStatusInternalServerError[] = "500 Internal Server Error";
 constexpr char kContentDispositionHeader[] = "Content-Disposition";
 constexpr char kContentDispositionValue[] = "inline; filename=capture.jpg";
 
-constexpr char kMessageCrossOrigin[] = "cross-origin request rejected";
-constexpr char kMessageTooManyRequests[] = "too many mutations, slow down";
 constexpr char kMessageBadQuery[] = "var and val are required";
 constexpr char kMessageBadSetting[] = "unsupported or invalid setting";
 constexpr char kMessageCameraUnavailable[] = "camera unavailable";
 constexpr char kMessageOutOfMemory[] = "out of memory";
+constexpr char kMessageRecordingUnavailable[] = "SD recording unavailable";
+constexpr char kMessageRecordingBusy[] = "stop recording and playback first";
+constexpr char kMessageBadRecordingId[] = "invalid recording id";
+constexpr char kMessageDeleteFailed[] = "recording could not be deleted";
 
-constexpr std::size_t kQueryCapacity = 96;
 constexpr std::size_t kVariableCapacity = 32;
-constexpr std::size_t kValueCapacity = 16;
-constexpr std::size_t kHeaderValueCapacity = 192;
-
-std::size_t copyHeader(httpd_req_t* request, const char* name, char* buffer,
-                       std::size_t capacity) {
-  if (buffer == nullptr || capacity == 0) {
-    return 0;
-  }
-  buffer[0] = '\0';
-  if (httpd_req_get_hdr_value_str(request, name, buffer, capacity) != ESP_OK) {
-    buffer[0] = '\0';
-    return 0;
-  }
-  return strlen(buffer);
-}
 
 }  // namespace
 
-HttpControlServer::HttpControlServer(ports::CameraPort& camera,
-                                     MjpegServer& streams)
-    : camera_(camera), streams_(streams) {}
+HttpControlServer::HttpControlServer(
+    ports::CameraPort& camera, MjpegServer& streams,
+    ports::RecordingPort& recordings,
+    ports::AuthenticationPort& authentication)
+    : camera_(camera),
+      streams_(streams),
+      recordings_(recordings),
+      middleware_(authentication) {}
 
 bool HttpControlServer::begin() {
-  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-  config.server_port = config::kControlPort;
-  config.max_open_sockets = config::kMaxControlClients;
-  config.lru_purge_enable = true;
-  config.recv_wait_timeout = 5;
-  config.send_wait_timeout = 5;
-  if (httpd_start(&server_, &config) != ESP_OK) {
-    return false;
-  }
-
-  const httpd_uri_t routes[] = {
-      makeUri(core::routes::kIndex, indexHandler, this),
-      makeUri(core::routes::kHealth, healthHandler, this),
-      makeUri(core::routes::kStatus, statusHandler, this),
-      makeUri(core::routes::kCapture, captureHandler, this),
-      makeUri(core::routes::kControl, controlHandler, this, HTTP_POST),
-      makeUri(core::routes::kStopStreams, stopStreamsHandler, this, HTTP_POST),
+  const http::Route routes[] = {
+      {core::routes::kIndex, HTTP_GET, indexHandler},
+      {core::routes::kHealth, HTTP_GET, healthHandler},
+      {core::routes::kStatus, HTTP_GET, statusHandler},
+      {core::routes::kCapture, HTTP_GET, captureHandler},
+      {core::routes::kControl, HTTP_POST, controlHandler},
+      {core::routes::kStopStreams, HTTP_POST, stopStreamsHandler},
+      {core::routes::kRecordingStart, HTTP_POST, recordingStartHandler},
+      {core::routes::kRecordingStop, HTTP_POST, recordingStopHandler},
+      {core::routes::kRecordings, HTTP_GET, recordingsHandler},
+      {core::routes::kRecordingDelete, HTTP_POST, recordingDeleteHandler},
   };
-  for (const auto& route : routes) {
-    if (httpd_register_uri_handler(server_, &route) != ESP_OK) {
-      return false;
-    }
-  }
-  return true;
+  return router_.begin(this, routes, sizeof(routes) / sizeof(routes[0]));
 }
 
 esp_err_t HttpControlServer::indexHandler(httpd_req_t* request) {
-  httpd_resp_set_type(request, kHtmlContentType);
-  setCommonHeaders(request);
+  HttpControlServer& self = owner(request);
+  if (!self.middleware_.handle(request, http::AccessPolicy::kRead)) {
+    return ESP_OK;
+  }
+  httpd_resp_set_type(request, http::response::kHtmlContentType);
+  http::response::setSecurityHeaders(request);
   return httpd_resp_send(request, ui::kIndexHtml, HTTPD_RESP_USE_STRLEN);
 }
 
 esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
-  const StreamStats stats = owner(request).streams_.stats();
+  HttpControlServer& self = owner(request);
+  if (!self.middleware_.handle(request, http::AccessPolicy::kRead)) {
+    return ESP_OK;
+  }
+  const StreamStats stats = self.streams_.stats();
+  const ports::RecordingStats recording = self.recordings_.stats();
   char peer[16] = "none";
   if (stats.clients > 0) {
     snprintf(peer, sizeof(peer), "%u.%u.%u.%u",
@@ -107,8 +85,8 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
              static_cast<unsigned int>(stats.peer[2]),
              static_cast<unsigned int>(stats.peer[3]));
   }
-  char response[640];
-  snprintf(response, sizeof(response),
+  char body[896]{};
+  snprintf(body, sizeof(body),
            "{\"status\":\"ok\",\"uptime_ms\":%lu,\"heap_size\":%u,"
            "\"free_heap\":%u,\"psram_size\":%u,\"free_psram\":%u,"
            "\"min_free_heap\":%u,\"max_alloc_heap\":%u,\"rssi\":%d,"
@@ -117,50 +95,65 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
            "\"stream_fps\":%u.%u,\"stream_stack_headroom\":%u,"
            "\"stream_delivery_ms\":%u,\"stream_target_fps\":%u,"
            "\"stream_quality_offset\":%u,\"stream_pressure\":%u,"
-           "\"stream_clients\":%u,\"stream_peer\":\"%s\"}",
+           "\"stream_clients\":%u,\"stream_peer\":\"%s\","
+           "\"recording_supported\":%s,\"sd_available\":%s,"
+           "\"recording_active\":%s,\"recording_pending\":%s,"
+           "\"recording_segment\":%u,\"recording_segments\":%u,"
+           "\"recording_frames\":%u,\"recording_failures\":%u,"
+           "\"recording_bytes\":%llu,\"sd_total_bytes\":%llu,"
+           "\"sd_free_bytes\":%llu}",
            millis(), ESP.getHeapSize(), ESP.getFreeHeap(), ESP.getPsramSize(),
            ESP.getFreePsram(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(),
-           WiFi.RSSI(),
-           stats.started ? "true" : "false",
+           WiFi.RSSI(), stats.started ? "true" : "false",
            stats.clients > 0 ? "true" : "false", stats.sessions, stats.frames,
            static_cast<unsigned int>(stats.framesPerSecondTimes10 / 10),
            static_cast<unsigned int>(stats.framesPerSecondTimes10 % 10),
            stats.stackHeadroomBytes, stats.averageDeliveryMs, stats.targetFps,
-           stats.jpegQualityOffset, stats.pressureLevel, stats.clients, peer);
-  httpd_resp_set_type(request, kJsonContentType);
-  setCommonHeaders(request);
-  return httpd_resp_send(request, response, HTTPD_RESP_USE_STRLEN);
+           stats.jpegQualityOffset, stats.pressureLevel, stats.clients, peer,
+           recording.supported ? "true" : "false",
+           recording.available ? "true" : "false",
+           recording.active ? "true" : "false",
+           recording.startPending ? "true" : "false", recording.segment,
+           recording.segments, recording.frames, recording.failures,
+           static_cast<unsigned long long>(recording.bytes),
+           static_cast<unsigned long long>(recording.totalBytes),
+           static_cast<unsigned long long>(recording.freeBytes));
+  return http::response::json(request, body);
 }
 
 esp_err_t HttpControlServer::statusHandler(httpd_req_t* request) {
-  core::CameraStatus status = owner(request).camera_.status();
-  status.quality = owner(request).streams_.baseJpegQuality();
-  char response[256];
-  snprintf(response, sizeof(response),
+  HttpControlServer& self = owner(request);
+  if (!self.middleware_.handle(request, http::AccessPolicy::kRead)) {
+    return ESP_OK;
+  }
+  core::CameraStatus status = self.camera_.status();
+  status.quality = self.streams_.baseJpegQuality();
+  char body[256]{};
+  snprintf(body, sizeof(body),
            "{\"framesize\":%u,\"quality\":%u,\"brightness\":%d,"
            "\"contrast\":%d,\"saturation\":%d,\"vflip\":%s,"
            "\"hmirror\":%s}",
            status.frameSize, status.quality, status.brightness, status.contrast,
            status.saturation, status.verticalFlip ? "true" : "false",
            status.horizontalMirror ? "true" : "false");
-  httpd_resp_set_type(request, kJsonContentType);
-  setCommonHeaders(request);
-  return httpd_resp_send(request, response, HTTPD_RESP_USE_STRLEN);
+  return http::response::json(request, body);
 }
 
 esp_err_t HttpControlServer::captureHandler(httpd_req_t* request) {
-  setCommonHeaders(request);
+  HttpControlServer& self = owner(request);
+  if (!self.middleware_.handle(request, http::AccessPolicy::kRead)) {
+    return ESP_OK;
+  }
+  http::response::setSecurityHeaders(request);
 
-  // The frame is copied out of the camera buffer before a single byte goes on
-  // the network, so the camera mutex is never held while a slow client reads.
   ports::CameraFrame frame;
-  if (!owner(request).camera_.acquire(frame) || frame.data == nullptr ||
-      frame.size == 0) {
+  if (!self.camera_.acquire(frame) || frame.data == nullptr || frame.size == 0) {
     if (frame.data != nullptr) {
-      owner(request).camera_.release(frame);
+      self.camera_.release(frame);
     }
-    return reject(request, kStatusInternalServerError,
-                  kMessageCameraUnavailable);
+    return http::response::error(request,
+                                 http::response::kStatusInternalServerError,
+                                 kMessageCameraUnavailable);
   }
 
   const std::size_t length = frame.size;
@@ -170,22 +163,21 @@ esp_err_t HttpControlServer::captureHandler(httpd_req_t* request) {
     copy = static_cast<uint8_t*>(malloc(length));
   }
   if (copy == nullptr) {
-    owner(request).camera_.release(frame);
-    return reject(request, kStatusInternalServerError, kMessageOutOfMemory);
+    self.camera_.release(frame);
+    return http::response::error(request,
+                                 http::response::kStatusInternalServerError,
+                                 kMessageOutOfMemory);
   }
   memcpy(copy, frame.data, length);
-  owner(request).camera_.release(frame);
+  self.camera_.release(frame);
 
-  httpd_resp_set_type(request, kJpegContentType);
+  httpd_resp_set_type(request, http::response::kJpegContentType);
   httpd_resp_set_hdr(request, kContentDispositionHeader,
                      kContentDispositionValue);
-
   const uint32_t deadline = millis() + config::kCaptureSendBudgetMs;
   std::size_t offset = 0;
-  while (offset < length) {
-    if (static_cast<int32_t>(millis() - deadline) >= 0) {
-      break;
-    }
+  while (offset < length &&
+         static_cast<int32_t>(millis() - deadline) < 0) {
     const std::size_t chunk =
         std::min<std::size_t>(config::kStreamWriteBlockSize, length - offset);
     if (httpd_resp_send_chunk(request,
@@ -205,116 +197,125 @@ esp_err_t HttpControlServer::captureHandler(httpd_req_t* request) {
 }
 
 esp_err_t HttpControlServer::controlHandler(httpd_req_t* request) {
-  const HttpAccess access = mutationAccess(request);
-  if (access != HttpAccess::kGranted) {
-    return denyAccess(request, access);
+  HttpControlServer& self = owner(request);
+  if (!self.middleware_.handle(request, http::AccessPolicy::kMutation)) {
+    return ESP_OK;
   }
-  char query[kQueryCapacity]{};
   char variable[kVariableCapacity]{};
-  char value[kValueCapacity]{};
-  if (httpd_req_get_url_query_str(request, query, sizeof(query)) != ESP_OK ||
-      httpd_query_key_value(query, core::routes::kQueryVariable, variable,
-                            sizeof(variable)) != ESP_OK ||
-      httpd_query_key_value(query, core::routes::kQueryValue, value,
-                            sizeof(value)) != ESP_OK) {
-    return reject(request, kStatusBadRequest, kMessageBadQuery);
+  int parsedValue = 0;
+  if (!http::request::queryValue(request, core::routes::kQueryVariable,
+                                 variable, sizeof(variable)) ||
+      !http::request::queryInteger(request, core::routes::kQueryValue,
+                                   parsedValue)) {
+    return http::response::error(request, http::response::kStatusBadRequest,
+                                 kMessageBadQuery);
   }
 
   core::CameraSetting setting;
-  int parsedValue = 0;
   if (!core::parseCameraSetting(variable, setting) ||
-      !core::security::parseInteger(value, parsedValue) ||
-      !owner(request).camera_.apply(setting, parsedValue)) {
-    return reject(request, kStatusBadRequest, kMessageBadSetting);
+      !self.camera_.apply(setting, parsedValue)) {
+    return http::response::error(request, http::response::kStatusBadRequest,
+                                 kMessageBadSetting);
   }
   if (setting == core::CameraSetting::kQuality) {
-    owner(request).streams_.setBaseJpegQuality(parsedValue);
+    self.streams_.setBaseJpegQuality(parsedValue);
   }
-  setCommonHeaders(request);
-  return httpd_resp_send(request, nullptr, 0);
+  return http::response::empty(request);
 }
 
 esp_err_t HttpControlServer::stopStreamsHandler(httpd_req_t* request) {
-  const HttpAccess access = mutationAccess(request);
-  if (access != HttpAccess::kGranted) {
-    return denyAccess(request, access);
-  }
-  owner(request).streams_.stopAll();
-  httpd_resp_set_type(request, kJsonContentType);
-  setCommonHeaders(request);
-  return httpd_resp_sendstr(request, "{\"stopping\":true}");
-}
-
-HttpAccess HttpControlServer::mutationAccess(httpd_req_t* request) {
-  // Browser mutations are accepted only from the camera UI. Requests without
-  // browser origin headers remain available to trusted IoT clients.
-  char origin[kHeaderValueCapacity]{};
-  char referer[kHeaderValueCapacity]{};
-  char host[kHeaderValueCapacity]{};
-  const bool hasOrigin = copyHeader(request, "Origin", origin,
-                                    sizeof(origin)) > 0;
-  const bool hasReferer = copyHeader(request, "Referer", referer,
-                                     sizeof(referer)) > 0;
-  const bool hasHost = copyHeader(request, "Host", host, sizeof(host)) > 0;
-  if (!hasHost ||
-      !core::security::isSameOrigin(hasOrigin ? origin : nullptr,
-                                    hasReferer ? referer : nullptr, host)) {
-    return HttpAccess::kCrossOrigin;
-  }
-
   HttpControlServer& self = owner(request);
-  const uint32_t now = millis();
-  if (self.lastMutationAt_ != 0 &&
-      now - self.lastMutationAt_ < config::kControlMinIntervalMs) {
-    return HttpAccess::kRateLimited;
+  if (!self.middleware_.handle(request, http::AccessPolicy::kMutation)) {
+    return ESP_OK;
   }
-  self.lastMutationAt_ = now;
-  return HttpAccess::kGranted;
+  self.streams_.stopAll();
+  return http::response::json(request, "{\"stopping\":true}");
 }
 
-esp_err_t HttpControlServer::denyAccess(httpd_req_t* request, HttpAccess access) {
-  switch (access) {
-    case HttpAccess::kCrossOrigin:
-      return reject(request, kStatusForbidden, kMessageCrossOrigin);
-    case HttpAccess::kRateLimited:
-      return reject(request, kStatusTooManyRequests, kMessageTooManyRequests);
-    case HttpAccess::kGranted:
-      break;
+esp_err_t HttpControlServer::recordingStartHandler(httpd_req_t* request) {
+  HttpControlServer& self = owner(request);
+  if (!self.middleware_.handle(request, http::AccessPolicy::kMutation)) {
+    return ESP_OK;
   }
-  return ESP_FAIL;
+  if (!self.recordings_.requestStart()) {
+    return http::response::error(request,
+                                 http::response::kStatusServiceUnavailable,
+                                 kMessageRecordingUnavailable);
+  }
+  return http::response::json(request, "{\"starting\":true}");
+}
+
+esp_err_t HttpControlServer::recordingStopHandler(httpd_req_t* request) {
+  HttpControlServer& self = owner(request);
+  if (!self.middleware_.handle(request, http::AccessPolicy::kMutation)) {
+    return ESP_OK;
+  }
+  self.recordings_.requestStop();
+  return http::response::json(request, "{\"stopping\":true}");
+}
+
+esp_err_t HttpControlServer::recordingsHandler(httpd_req_t* request) {
+  HttpControlServer& self = owner(request);
+  if (!self.middleware_.handle(request, http::AccessPolicy::kRead)) {
+    return ESP_OK;
+  }
+  const ports::RecordingStats stats = self.recordings_.stats();
+  if (!stats.available) {
+    return http::response::error(request,
+                                 http::response::kStatusServiceUnavailable,
+                                 kMessageRecordingUnavailable);
+  }
+  if (stats.active || stats.startPending) {
+    return http::response::error(request, http::response::kStatusConflict,
+                                 kMessageRecordingBusy);
+  }
+
+  ports::RecordingFileInfo files[config::kMaxRecordingFiles]{};
+  const std::size_t count =
+      self.recordings_.list(files, config::kMaxRecordingFiles);
+  httpd_resp_set_type(request, http::response::kJsonContentType);
+  http::response::setSecurityHeaders(request);
+  if (httpd_resp_sendstr_chunk(request, "{\"files\":[") != ESP_OK) {
+    return ESP_FAIL;
+  }
+  for (std::size_t index = 0; index < count; ++index) {
+    char entry[96]{};
+    snprintf(entry, sizeof(entry), "%s{\"id\":%u,\"bytes\":%llu}",
+             index == 0 ? "" : ",", files[index].index,
+             static_cast<unsigned long long>(files[index].bytes));
+    if (httpd_resp_sendstr_chunk(request, entry) != ESP_OK) {
+      return ESP_FAIL;
+    }
+  }
+  if (httpd_resp_sendstr_chunk(request, "]}") != ESP_OK) {
+    return ESP_FAIL;
+  }
+  return httpd_resp_send_chunk(request, nullptr, 0);
+}
+
+esp_err_t HttpControlServer::recordingDeleteHandler(httpd_req_t* request) {
+  HttpControlServer& self = owner(request);
+  if (!self.middleware_.handle(request, http::AccessPolicy::kMutation)) {
+    return ESP_OK;
+  }
+  int recordingId = 0;
+  if (!http::request::queryInteger(request, core::routes::kQueryId,
+                                   recordingId) ||
+      recordingId <= 0 ||
+      recordingId >
+          static_cast<int>(config::kMaximumRecordingSegmentIndex)) {
+    return http::response::error(request, http::response::kStatusBadRequest,
+                                 kMessageBadRecordingId);
+  }
+  if (!self.recordings_.remove(static_cast<uint32_t>(recordingId))) {
+    return http::response::error(request, http::response::kStatusConflict,
+                                 kMessageDeleteFailed);
+  }
+  return http::response::empty(request);
 }
 
 HttpControlServer& HttpControlServer::owner(httpd_req_t* request) {
   return *static_cast<HttpControlServer*>(request->user_ctx);
-}
-
-void HttpControlServer::setCommonHeaders(httpd_req_t* request) {
-  // No wildcard CORS header: it would let any origin read the camera state.
-  // The camera is reachable from the local network only, and mutations are
-  // additionally screened by mutationAccess().
-  httpd_resp_set_hdr(request, "Cache-Control", kCacheControl);
-  httpd_resp_set_hdr(request, "X-Content-Type-Options", "nosniff");
-  httpd_resp_set_hdr(request, "X-Frame-Options", "DENY");
-  httpd_resp_set_hdr(request, "Referrer-Policy", "same-origin");
-}
-
-esp_err_t HttpControlServer::reject(httpd_req_t* request, const char* status,
-                                    const char* message) {
-  httpd_resp_set_status(request, status);
-  httpd_resp_set_type(request, kTextContentType);
-  httpd_resp_set_hdr(request, "Cache-Control", kCacheControl);
-  return httpd_resp_send(request, message, HTTPD_RESP_USE_STRLEN);
-}
-
-httpd_uri_t HttpControlServer::makeUri(
-    const char* path, esp_err_t (*handler)(httpd_req_t*),
-    HttpControlServer* server, httpd_method_t method) {
-  httpd_uri_t uri{};
-  uri.uri = path;
-  uri.method = method;
-  uri.handler = handler;
-  uri.user_ctx = server;
-  return uri;
 }
 
 }  // namespace app::adapters

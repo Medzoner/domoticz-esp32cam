@@ -18,3 +18,8 @@
 // Passphrase of the Wi-Fi setup access point. Leave it empty to publish an
 // open access point instead. Change this value before sharing the firmware.
 #define CAMERA_SETUP_AP_PASSWORD "change-me-setup"
+
+// Leave both values empty to disable authentication. Set both values to enable
+// HTTP Basic login and a per-boot session cookie across ports 80, 81, and 82.
+#define CAMERA_AUTH_USERNAME ""
+#define CAMERA_AUTH_PASSWORD ""

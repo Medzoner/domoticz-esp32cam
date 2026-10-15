@@ -15,6 +15,8 @@ consumers such as MotionEye, Home Assistant, and OctoPrint.
 - Static IPv4 configuration, DHCP hostname, and mDNS discovery
 - First-boot provisioning portal with network scanning and captive portal
   detection
+- Manual SD-card recording with segmentation, file management, download, and
+  browser playback on AI Thinker ESP32-CAM
 - Same-origin checks and rate limiting on the control interface
 - Native unit tests and Cppcheck static analysis
 - GitHub Actions CI and tagged firmware releases
@@ -57,17 +59,22 @@ HTTP caching, and pauses polling while the browser tab is hidden.
 
 ## Hardware
 
-- A supported camera board with PSRAM:
+Supported camera boards require PSRAM:
 
-  | PlatformIO environment | Camera board |
-  |---|---|
-  | `esp32cam` | AI Thinker ESP32-CAM |
-  | `esp-eye` | Espressif ESP-EYE |
-  | `esp32s3-cam-lcd` | Espressif ESP32-S3 CAM LCD |
-  | `m5stack-camera` | M5Stack Camera PSRAM |
+| PlatformIO environment | Camera board |
+|---|---|
+| `esp32cam` | AI Thinker ESP32-CAM |
+| `esp-eye` | Espressif ESP-EYE |
+| `esp32s3-cam-lcd` | Espressif ESP32-S3 CAM LCD |
+| `m5stack-camera` | M5Stack Camera PSRAM |
 
-- A compatible camera sensor such as the OV2640
-- USB-to-serial adapter for initial flashing
+Use a compatible camera sensor such as the OV2640 and a USB-to-serial adapter
+for initial flashing when the board does not expose native USB.
+
+SD recording currently targets the built-in microSD slot on the AI Thinker
+ESP32-CAM. It uses `SD_MMC` in 1-bit mode, leaving GPIO 4 available and reducing
+pin conflicts. Other board environments expose the streaming features but mark
+recording as unsupported until their storage wiring is defined and validated.
 
 ## Configuration
 
@@ -82,6 +89,12 @@ Set the Wi-Fi credentials, hostname, static address, and gateway in
 
 The same file also holds `CAMERA_SETUP_AP_PASSWORD` for the onboarding access
 point.
+
+Authentication is optional. Leave `CAMERA_AUTH_USERNAME` and
+`CAMERA_AUTH_PASSWORD` empty to keep the trusted-LAN behavior, or set both to
+enable HTTP Basic login. A successful login creates a random per-boot session
+cookie shared by ports 80, 81, and 82, so the browser does not prompt again when
+opening the live stream or recording player. A username cannot contain `:`.
 
 The default hostname in the example configuration is `octoprint-cam`. Once the
 device is online, supported clients can reach it at
@@ -137,8 +150,8 @@ pio run --environment esp32cam --target upload
 pio device monitor --baud 115200
 ```
 
-The AI Thinker environment defaults to `/dev/ttyUSB0`. Other environments use
-PlatformIO port detection. Override the port on the command line when needed.
+PlatformIO detects the upload and monitor ports. Override the port on the
+command line when automatic detection is not suitable.
 
 ## HTTP API
 
@@ -146,12 +159,16 @@ The control server listens on port 80:
 
 | Method | Path | Access | Description |
 |---|---|---|---|
-| `GET` | `/` | Open | Responsive camera interface |
-| `GET` | `/health` | Open | Device, Wi-Fi, memory, and stream telemetry |
-| `GET` | `/status` | Open | Current camera settings |
-| `GET` | `/capture` | Open | One JPEG snapshot |
-| `POST` | `/control?var=<name>&val=<value>` | Same origin | Update one validated camera setting |
-| `POST` | `/stream-stop` | Same origin | Disconnect all MJPEG consumers |
+| `GET` | `/` | Optional auth | Responsive camera interface |
+| `GET` | `/health` | Optional auth | Device, Wi-Fi, memory, stream, and recording telemetry |
+| `GET` | `/status` | Optional auth | Current camera settings |
+| `GET` | `/capture` | Optional auth | One JPEG snapshot |
+| `POST` | `/control?var=<name>&val=<value>` | Optional auth + same origin | Update one validated camera setting |
+| `POST` | `/stream-stop` | Optional auth + same origin | Disconnect all MJPEG consumers |
+| `POST` | `/recording/start` | Optional auth + same origin | Start a new SD recording |
+| `POST` | `/recording/stop` | Optional auth + same origin | Flush and stop SD recording |
+| `GET` | `/recordings` | Optional auth | List recordings while recording is stopped |
+| `POST` | `/recording/delete?id=<id>` | Optional auth + same origin | Delete one stopped recording |
 
 Mutating browser requests require an `Origin` or `Referer` header that matches
 the camera's own `Host`, accept only `POST`, and are limited to one accepted
@@ -164,12 +181,39 @@ existing consumers keep working:
 http://octoprint-cam.local:81/stream
 ```
 
+Recorded-file playback and download use a separate server on port 82. Keeping
+this work away from the control server means a long playback cannot block
+health checks or camera commands.
+
+## SD Recording
+
+Use the **SD recordings** panel in the web interface, or call the start and stop
+endpoints from Domoticz or another trusted IoT client. Recording also works when
+there are no live stream viewers because the stream task continues capturing
+frames while a recording is active.
+
+Recordings are split at 64 MiB and stored as `recording-NNNNN.mjr`. The MJR
+container stores the original JPEG frames without re-encoding. The integrated
+player serves those frames back as MJPEG at approximately 10 FPS. Files can be
+listed, played, downloaded, and deleted from the browser after recording stops.
+The firmware reserves 8 MiB of free space and stops with an error instead of
+deleting existing recordings automatically.
+
+For an authenticated Domoticz or command-line integration, send HTTP Basic
+credentials with each request, for example:
+
+```bash
+curl --user camera:your-password --request POST \
+  http://octoprint-cam.local/recording/start
+```
+
 ## Security
 
-The camera is an unauthenticated plain HTTP device intended for an isolated,
-trusted IoT network. Every host on the segment can read the video feed and
-invoke the API, so network segmentation and firewall policy are the security
-boundary.
+The camera is a plain HTTP device intended for an isolated, trusted IoT
+network. Optional authentication limits access but does not encrypt credentials,
+video, or commands. Network segmentation and firewall policy remain the main
+security boundary. When authentication is disabled, every host on the segment
+can read the video feed and invoke the API.
 
 - `/control` and `/stream-stop` accept `POST` only. The camera compares the
   `Origin` (or `Referer`) header against its own `Host` and answers `403` for a
@@ -183,11 +227,12 @@ boundary.
   stream task.
 - Responses no longer send `Access-Control-Allow-Origin: *`. The interface also
   sets `X-Content-Type-Options`, `X-Frame-Options`, and `Referrer-Policy`.
-- All endpoints stay open for OctoPrint, MotionEye, and other IoT consumers.
+- Authentication can stay disabled for legacy OctoPrint, MotionEye, and other
+  trusted IoT consumers, or protect all three HTTP ports when configured.
 
-Known residual risks: no TLS, no application authentication, no secure boot,
-and no flash encryption. Do not expose the device directly to an untrusted LAN
-or the Internet.
+Known residual risks: no TLS, Basic credentials are only encoded rather than
+encrypted, and there is no secure boot or flash encryption. Do not expose the
+device directly to an untrusted LAN or the Internet.
 
 ## Architecture
 
@@ -197,7 +242,9 @@ Dependencies point from adapters toward the core and ports:
 - `src/ports/` defines the camera contract used by the application.
 - `src/adapters/` implements the OV2640 camera, Wi-Fi, HTTP API, and MJPEG server.
 - `src/config/` contains compile-time application settings.
-- `src/ui/` contains the embedded web interface.
+- `web/` contains separate HTML, CSS, and JavaScript sources.
+- `scripts/embed_web_assets.py` combines those files into self-contained pages
+  in the PlatformIO build directory for reliable captive-portal use.
 - `src/main.cpp` is the composition root.
 - `test/test_core/` contains native Unity tests.
 

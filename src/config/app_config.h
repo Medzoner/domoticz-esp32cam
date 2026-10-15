@@ -8,6 +8,7 @@ namespace app::config {
 inline constexpr uint16_t kControlPort = 80;
 inline constexpr uint16_t kStreamPort = 81;
 inline constexpr std::size_t kMaxControlClients = 7;
+inline constexpr std::size_t kMaxControlRoutes = 12;
 inline constexpr std::size_t kMaxStreamClients = 4;
 inline constexpr std::size_t kStreamWriteBlockSize = 16384;
 inline constexpr uint32_t kStreamTaskStackSize = 3584;
@@ -31,6 +32,7 @@ inline constexpr std::size_t kMaximumRequestHeaderBytes = 1024;
 inline constexpr uint32_t kCaptureSendBudgetMs = 3000;
 // Minimum delay between two accepted camera mutations.
 inline constexpr uint32_t kControlMinIntervalMs = 250;
+inline constexpr bool kLogHttpRequests = false;
 
 inline constexpr uint32_t kWifiConnectTimeoutMs = 30000;
 inline constexpr uint32_t kWifiRetryIntervalMs = 10000;
@@ -50,6 +52,21 @@ inline constexpr uint32_t kCameraLockTimeoutMs = 2000;
 inline constexpr int kCameraClockHz = 20000000;
 inline constexpr int kDefaultJpegQuality = 12;
 inline constexpr uint8_t kMaximumJpegQuality = 63;
+
+inline constexpr uint64_t kRecordingSegmentMaxBytes = 64ULL * 1024ULL * 1024ULL;
+inline constexpr uint64_t kRecordingMinimumFreeBytes = 8ULL * 1024ULL * 1024ULL;
+inline constexpr uint32_t kRecordingFlushIntervalMs = 2000;
+inline constexpr uint32_t kRecordingLockTimeoutMs = 1000;
+inline constexpr uint32_t kMaximumRecordingSegmentIndex = 99999;
+inline constexpr std::size_t kMaxRecordingFiles = 32;
+inline constexpr std::size_t kRecordingReadBlockSize = 4096;
+inline constexpr std::size_t kMaximumRecordedFrameBytes = 2 * 1024 * 1024;
+inline constexpr uint16_t kPlaybackPort = 82;
+inline constexpr uint32_t kPlaybackFrameIntervalMs = 100;
+inline constexpr uint32_t kPlaybackTaskStackSize = 4096;
+inline constexpr uint32_t kPlaybackTaskPriority = 1;
+inline constexpr uint32_t kPlaybackTaskCore = 0;
+inline constexpr char kPlaybackTaskName[] = "recording-playback";
 
 inline constexpr char kMdnsService[] = "http";
 inline constexpr char kMdnsProtocol[] = "tcp";

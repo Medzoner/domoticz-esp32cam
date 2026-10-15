@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10151f">
+  <title>Wi-Fi setup · ESP32-CAM</title>
+  {{STYLE}}
+</head>
+<body><main>
+  <header class="top">
+    <div><h1>Wi-Fi setup</h1><p class="sub">Connect the camera to your network</p></div>
+    <span class="badge">Setup mode</span>
+  </header>
+  <section class="card">
+    <h2>Nearby networks</h2>
+    <div class="row"><button id="scan" type="button">Scan again</button><span id="scanStatus" class="muted">Looking for networks…</span></div>
+    <ul id="nets" class="nets"></ul>
+    <form method="post" action="/save" autocomplete="off">
+      <label class="lbl" for="ssid">Network name</label>
+      <input id="ssid" name="ssid" type="text" maxlength="32" required placeholder="SSID" autocapitalize="none" autocorrect="off" spellcheck="false">
+      <label class="lbl" for="pass">Password</label>
+      <div class="pw">
+        <input id="pass" name="pass" type="password" maxlength="64" placeholder="Leave empty for an open network" autocapitalize="none" autocorrect="off" spellcheck="false">
+        <button id="toggle" type="button">Show</button>
+      </div>
+      <label class="chk"><input type="hidden" name="dhcp" value="0"><input type="checkbox" name="dhcp" value="1" checked> Use DHCP to obtain an address automatically</label>
+      <div class="actions"><button class="primary" type="submit">Save and restart</button><span class="muted">The camera restarts once the settings are saved.</span></div>
+    </form>
+  </section>
+  <footer class="foot">Setup access point: <b id="ap">{{ACCESS_POINT}}</b><br>
+    Open this page at <b>http://192.168.4.1/</b> if your device did not open it automatically.<br>
+    The camera retries the last saved network for 10 minutes, then returns to this setup page.
+  </footer>
+</main>
+{{SCRIPT}}
+</body></html>

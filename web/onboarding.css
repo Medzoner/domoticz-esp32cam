@@ -1,0 +1,25 @@
+:root{color-scheme:dark;--bg:#10151f;--panel:#192130;--line:#2c394c;--text:#edf3fb;--muted:#9dafc5;--accent:#53d6a5}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at top,#1d2b40,var(--bg) 55%);color:var(--text);font:15px system-ui,sans-serif;min-height:100vh}
+main{width:min(680px,100%);margin:auto;padding:24px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+h1{font-size:clamp(1.4rem,4vw,2rem);margin:0}.sub{margin:6px 0 0;color:var(--muted)}
+.badge{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 12px;color:var(--muted);white-space:nowrap}
+.card{background:color-mix(in srgb,var(--panel) 92%,transparent);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 18px 50px #0005}
+h2{font-size:1rem;margin:0 0 12px}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.muted{color:var(--muted);font-size:.88rem}
+button,input{font:inherit}button{border:1px solid var(--line);background:#222d3d;color:var(--text);border-radius:10px;padding:10px 13px;cursor:pointer}
+button:hover{filter:brightness(1.12)}button.primary{background:var(--accent);border-color:var(--accent);color:#08251b;font-weight:700}
+button:disabled{opacity:.55;cursor:default}
+.nets{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px;max-height:210px;overflow:auto}
+.net{width:100%;display:flex;justify-content:space-between;gap:10px;text-align:left;background:#222d3d}
+.net .ssid{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.net .meta{color:var(--muted);font-size:.85rem;white-space:nowrap}
+form{margin-top:18px;border-top:1px solid var(--line);padding-top:8px}
+label.lbl{display:block;color:var(--muted);margin:14px 0 6px}
+input[type=text],input[type=password]{width:100%;border:1px solid var(--line);background:#111725;color:var(--text);border-radius:10px;padding:11px 12px}
+input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.pw{display:grid;grid-template-columns:1fr auto;gap:8px}
+.chk{display:flex;gap:9px;align-items:flex-start;margin:16px 0;color:var(--muted)}
+.chk input{accent-color:var(--accent);margin-top:3px}
+.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.foot{margin-top:16px;color:var(--muted);font-size:.85rem;line-height:1.6}.foot b{color:var(--text)}
+@media(max-width:560px){main{padding:14px}.card{border-radius:14px}}
