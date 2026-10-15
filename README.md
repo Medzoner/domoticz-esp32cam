@@ -1,6 +1,6 @@
 # ESP32-CAM Multi-Client Streamer
 
-PlatformIO firmware for the AI Thinker ESP32-CAM. It provides a responsive
+PlatformIO firmware for several ESP32 camera boards. It provides a responsive
 control interface, JPEG snapshots, and one shared MJPEG stream for multiple
 consumers such as MotionEye, Home Assistant, and OctoPrint.
 
@@ -57,8 +57,16 @@ HTTP caching, and pauses polling while the browser tab is hidden.
 
 ## Hardware
 
-- AI Thinker ESP32-CAM with an OV2640 sensor
-- PSRAM-enabled board configuration
+- A supported camera board with PSRAM:
+
+  | PlatformIO environment | Camera board |
+  |---|---|
+  | `esp32cam` | AI Thinker ESP32-CAM |
+  | `esp-eye` | Espressif ESP-EYE |
+  | `esp32s3-cam-lcd` | Espressif ESP32-S3 CAM LCD |
+  | `m5stack-camera` | M5Stack Camera PSRAM |
+
+- A compatible camera sensor such as the OV2640
 - USB-to-serial adapter for initial flashing
 
 ## Configuration
@@ -114,6 +122,14 @@ pio check --environment esp32cam
 pio run --environment esp32cam
 ```
 
+Build another supported board by selecting its environment, for example:
+
+```bash
+pio run --environment esp-eye
+pio run --environment esp32s3-cam-lcd
+pio run --environment m5stack-camera
+```
+
 Flash and monitor a connected board:
 
 ```bash
@@ -121,8 +137,8 @@ pio run --environment esp32cam --target upload
 pio device monitor --baud 115200
 ```
 
-The local `platformio.ini` defaults to `/dev/ttyUSB0`. Override the port on the
-command line when needed.
+The AI Thinker environment defaults to `/dev/ttyUSB0`. Other environments use
+PlatformIO port detection. Override the port on the command line when needed.
 
 ## HTTP API
 
@@ -193,8 +209,8 @@ Dependencies point from adapters toward the core and ports:
 2. creates a build-only configuration from `secrets.example.h`;
 3. runs native unit tests;
 4. runs native and ESP32 Cppcheck analysis;
-5. builds the ESP32 firmware; and
-6. uploads firmware artifacts for 14 days.
+5. builds firmware for every supported camera board; and
+6. uploads the board-specific firmware artifacts for 14 days.
 
 Third-party actions are pinned to full commit SHAs with the release version in
 a trailing comment. The release workflow grants `contents: write` only to the
@@ -210,10 +226,15 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The release includes a standalone application binary and a compressed flashing
-bundle. The bundle contains the bootloader, partition table, OTA bootstrap,
-application firmware, checksums, and the complete `esptool.py` command with the
-required flash offsets.
+The release includes a board-specific application binary for every supported
+PlatformIO environment. It also includes a compressed AI Thinker flashing
+bundle containing the bootloader, partition table, OTA bootstrap, application
+firmware, checksums, and the complete `esptool.py` command with the required
+flash offsets.
 
 The release workflow can also be started manually for an existing tag from the
 GitHub Actions interface.
+
+## License
+
+This project is available under the [MIT License](LICENSE).

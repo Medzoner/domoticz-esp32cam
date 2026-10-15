@@ -64,7 +64,9 @@ jobs:
           pio test --environment native
           pio check --environment native
           pio check --environment esp32cam
-          pio run --environment esp32cam
+          for environment in esp32cam esp-eye esp32s3-cam-lcd m5stack-camera; do
+            pio run --environment "$environment"
+          done
 
       - name: Assemble release bundle
         env:
@@ -80,7 +82,10 @@ jobs:
             > dist/package/flash-command.txt
           (cd dist/package && sha256sum *.bin > SHA256SUMS)
           tar -C dist/package -czf "dist/esp32cam-${RELEASE_TAG}.tar.gz" .
-          cp .pio/build/esp32cam/firmware.bin "dist/esp32cam-${RELEASE_TAG}-firmware.bin"
+          for environment in esp32cam esp-eye esp32s3-cam-lcd m5stack-camera; do
+            cp ".pio/build/$environment/firmware.bin" \
+              "dist/esp32cam-${RELEASE_TAG}-${environment}-firmware.bin"
+          done
 
       - name: Publish GitHub release
         env:
@@ -89,6 +94,6 @@ jobs:
         run: |
           gh release create "$RELEASE_TAG" \
             "dist/esp32cam-${RELEASE_TAG}.tar.gz" \
-            "dist/esp32cam-${RELEASE_TAG}-firmware.bin" \
+            dist/esp32cam-*-firmware.bin \
             --generate-notes \
             --title "$RELEASE_TAG"

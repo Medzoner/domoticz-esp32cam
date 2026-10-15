@@ -5,8 +5,15 @@
 
 #include "config/app_config.h"
 
-#define CAMERA_MODEL_AI_THINKER
 #include "camera_pins.h"
+
+#ifndef CAMERA_DEFAULT_VFLIP
+#define CAMERA_DEFAULT_VFLIP 0
+#endif
+
+#ifndef CAMERA_DEFAULT_HMIRROR
+#define CAMERA_DEFAULT_HMIRROR 0
+#endif
 
 namespace app::adapters {
 namespace {
@@ -54,13 +61,17 @@ bool Esp32Camera::begin() {
   if (mutex_ == nullptr) {
     return false;
   }
+#if defined(CAMERA_MODEL_ESP_EYE)
+  pinMode(13, INPUT_PULLUP);
+  pinMode(14, INPUT_PULLUP);
+#endif
   camera_config_t config = makeCameraConfig();
   if (esp_camera_init(&config) != ESP_OK) {
     return false;
   }
   sensor_t* sensor = esp_camera_sensor_get();
-  return sensor->set_vflip(sensor, 1) == 0 &&
-         sensor->set_hmirror(sensor, 1) == 0;
+  return sensor->set_vflip(sensor, CAMERA_DEFAULT_VFLIP) == 0 &&
+         sensor->set_hmirror(sensor, CAMERA_DEFAULT_HMIRROR) == 0;
 }
 
 bool Esp32Camera::acquire(ports::CameraFrame& frame) {

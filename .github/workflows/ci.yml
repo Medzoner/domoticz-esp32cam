@@ -45,17 +45,23 @@ jobs:
       - name: Run ESP32 static analysis
         run: pio check --environment esp32cam
 
-      - name: Build ESP32-CAM firmware
-        run: pio run --environment esp32cam
+      - name: Build supported camera firmware
+        run: |
+          for environment in esp32cam esp-eye esp32s3-cam-lcd m5stack-camera; do
+            pio run --environment "$environment"
+          done
 
       - name: Stage firmware artifacts
         run: |
           mkdir -p dist
-          cp .pio/build/esp32cam/firmware.bin dist/
-          cp .pio/build/esp32cam/firmware.elf dist/
-          cp .pio/build/esp32cam/bootloader.bin dist/
-          cp .pio/build/esp32cam/partitions.bin dist/
-          sha256sum dist/* > dist/SHA256SUMS
+          for environment in esp32cam esp-eye esp32s3-cam-lcd m5stack-camera; do
+            mkdir -p "dist/$environment"
+            cp ".pio/build/$environment/firmware.bin" "dist/$environment/"
+            cp ".pio/build/$environment/firmware.elf" "dist/$environment/"
+            cp ".pio/build/$environment/bootloader.bin" "dist/$environment/"
+            cp ".pio/build/$environment/partitions.bin" "dist/$environment/"
+          done
+          (cd dist && sha256sum */* > SHA256SUMS)
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
