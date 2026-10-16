@@ -4,8 +4,8 @@
 
 #include "adapters/http/http_request.h"
 #include "adapters/http/http_response.h"
-#include "config/app_config.h"
-#include "core/http_security.h"
+#include "config/http_config.h"
+#include "core/http/http_security.h"
 
 namespace app::adapters::http {
 namespace {

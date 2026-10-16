@@ -2,13 +2,13 @@
 
 #include <cstring>
 
-#include "core/camera_settings.h"
-#include "core/basic_auth.h"
-#include "core/http_security.h"
-#include "core/mjpeg_protocol.h"
-#include "core/provisioning_rules.h"
-#include "core/recording_rules.h"
-#include "core/stream_adaptation.h"
+#include "core/auth/basic_auth.h"
+#include "core/camera/camera_settings.h"
+#include "core/http/http_security.h"
+#include "core/provisioning/provisioning_rules.h"
+#include "core/recording/recording_rules.h"
+#include "core/stream/mjpeg_protocol.h"
+#include "core/stream/stream_adaptation.h"
 
 namespace {
 

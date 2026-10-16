@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-#include "ports/authentication_port.h"
+#include "ports/auth/authentication_port.h"
 
 namespace app::adapters::http {
 

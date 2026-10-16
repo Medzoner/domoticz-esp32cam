@@ -238,10 +238,14 @@ device directly to an untrusted LAN or the Internet.
 
 Dependencies point from adapters toward the core and ports:
 
-- `src/core/` contains platform-independent validation and MJPEG protocol code.
-- `src/ports/` defines the camera contract used by the application.
-- `src/adapters/` implements the OV2640 camera, Wi-Fi, HTTP API, and MJPEG server.
-- `src/config/` contains compile-time application settings.
+- `src/core/<responsibility>/` contains platform-independent rules for auth,
+  camera controls, HTTP, provisioning, recording, and streaming.
+- `src/ports/<responsibility>/` defines the authentication, camera, and
+  recording contracts consumed by adapters.
+- `src/adapters/<responsibility>/` isolates camera hardware, HTTP, networking,
+  provisioning, recording/SD, security, and streaming implementations.
+- `src/config/*_config.h` keeps compile-time settings split by responsibility
+  instead of exposing one global configuration header.
 - `web/` contains separate HTML, CSS, and JavaScript sources.
 - `scripts/embed_web_assets.py` combines those files into self-contained pages
   in the PlatformIO build directory for reliable captive-portal use.

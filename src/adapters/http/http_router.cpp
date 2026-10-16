@@ -1,6 +1,6 @@
 #include "adapters/http/http_router.h"
 
-#include "config/app_config.h"
+#include "config/http_config.h"
 
 namespace app::adapters::http {
 

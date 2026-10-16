@@ -1,16 +1,19 @@
 #include <Arduino.h>
 #include <ESPmDNS.h>
 
-#include "adapters/esp32_camera.h"
-#include "adapters/camera_auth.h"
-#include "adapters/http_control_server.h"
-#include "adapters/mjpeg_server.h"
-#include "adapters/provisioning_portal.h"
-#include "adapters/recording_playback_server.h"
-#include "adapters/sd_mjpeg_recorder.h"
-#include "adapters/wifi_station.h"
-#include "config/app_config.h"
-#include "core/provisioning_rules.h"
+#include "adapters/camera/esp32_camera.h"
+#include "adapters/http/http_control_server.h"
+#include "adapters/network/wifi_station.h"
+#include "adapters/provisioning/provisioning_portal.h"
+#include "adapters/recording/recording_playback_server.h"
+#include "adapters/recording/sd_mjpeg_recorder.h"
+#include "adapters/security/camera_auth.h"
+#include "adapters/stream/mjpeg_server.h"
+#include "config/http_config.h"
+#include "config/service_config.h"
+#include "config/stream_config.h"
+#include "config/wifi_config.h"
+#include "core/provisioning/provisioning_rules.h"
 #include "secrets.h"
 
 namespace {

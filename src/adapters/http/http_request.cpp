@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-#include "core/http_security.h"
+#include "core/http/http_security.h"
 
 namespace app::adapters::http::request {
 namespace {
