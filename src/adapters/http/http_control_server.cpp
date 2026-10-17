@@ -87,9 +87,10 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
              static_cast<unsigned int>(stats.peer[2]),
              static_cast<unsigned int>(stats.peer[3]));
   }
-  char body[896]{};
+  char body[928]{};
   snprintf(body, sizeof(body),
-           "{\"status\":\"ok\",\"uptime_ms\":%lu,\"heap_size\":%u,"
+           "{\"status\":\"ok\",\"uptime_ms\":%lu,"
+           "\"chip_temperature_c\":%.1f,\"heap_size\":%u,"
            "\"free_heap\":%u,\"psram_size\":%u,\"free_psram\":%u,"
            "\"min_free_heap\":%u,\"max_alloc_heap\":%u,\"rssi\":%d,"
            "\"stream_server\":%s,\"stream_active\":%s,"
@@ -104,9 +105,10 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
            "\"recording_frames\":%u,\"recording_failures\":%u,"
            "\"recording_bytes\":%llu,\"sd_total_bytes\":%llu,"
            "\"sd_free_bytes\":%llu}",
-           millis(), ESP.getHeapSize(), ESP.getFreeHeap(), ESP.getPsramSize(),
-           ESP.getFreePsram(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(),
-           WiFi.RSSI(), stats.started ? "true" : "false",
+           millis(), static_cast<double>(temperatureRead()), ESP.getHeapSize(),
+           ESP.getFreeHeap(), ESP.getPsramSize(), ESP.getFreePsram(),
+           ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), WiFi.RSSI(),
+           stats.started ? "true" : "false",
            stats.clients > 0 ? "true" : "false", stats.sessions, stats.frames,
            static_cast<unsigned int>(stats.framesPerSecondTimes10 / 10),
            static_cast<unsigned int>(stats.framesPerSecondTimes10 % 10),
@@ -134,10 +136,11 @@ esp_err_t HttpControlServer::statusHandler(httpd_req_t* request) {
   snprintf(body, sizeof(body),
            "{\"framesize\":%u,\"quality\":%u,\"brightness\":%d,"
            "\"contrast\":%d,\"saturation\":%d,\"vflip\":%s,"
-           "\"hmirror\":%s}",
+           "\"hmirror\":%s,\"flash\":%s}",
            status.frameSize, status.quality, status.brightness, status.contrast,
            status.saturation, status.verticalFlip ? "true" : "false",
-           status.horizontalMirror ? "true" : "false");
+           status.horizontalMirror ? "true" : "false",
+           status.flashEnabled ? "true" : "false");
   return http::response::json(request, body);
 }
 

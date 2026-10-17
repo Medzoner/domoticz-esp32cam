@@ -12,6 +12,7 @@ enum class CameraSetting : uint8_t {
   kSaturation,
   kVerticalFlip,
   kHorizontalMirror,
+  kFlash,
 };
 
 struct CameraStatus {
@@ -22,6 +23,7 @@ struct CameraStatus {
   int8_t saturation;
   bool verticalFlip;
   bool horizontalMirror;
+  bool flashEnabled;
 };
 
 bool parseCameraSetting(const char* name, CameraSetting& setting);

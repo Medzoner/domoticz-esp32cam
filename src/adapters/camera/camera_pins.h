@@ -1,6 +1,7 @@
 #pragma once
 
 #if defined(CAMERA_MODEL_AI_THINKER)
+#define CAMERA_FLASH_GPIO 4
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -19,10 +20,11 @@
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-#define CAMERA_DEFAULT_VFLIP 1
-#define CAMERA_DEFAULT_HMIRROR 1
+#define CAMERA_DEFAULT_VFLIP 0
+#define CAMERA_DEFAULT_HMIRROR 0
 
 #elif defined(CAMERA_MODEL_ESP_EYE)
+#define CAMERA_FLASH_GPIO -1
 #define PWDN_GPIO_NUM    -1
 #define RESET_GPIO_NUM   -1
 #define XCLK_GPIO_NUM    4
@@ -42,6 +44,7 @@
 #define PCLK_GPIO_NUM    25
 
 #elif defined(CAMERA_MODEL_M5STACK_PSRAM)
+#define CAMERA_FLASH_GPIO -1
 #define PWDN_GPIO_NUM     -1
 #define RESET_GPIO_NUM    15
 #define XCLK_GPIO_NUM     27
@@ -61,6 +64,7 @@
 #define PCLK_GPIO_NUM     21
 
 #elif defined(CAMERA_MODEL_ESP32S3_CAM_LCD)
+#define CAMERA_FLASH_GPIO -1
 #define PWDN_GPIO_NUM     -1
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM     40

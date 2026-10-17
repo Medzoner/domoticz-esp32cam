@@ -18,6 +18,7 @@ constexpr SettingName kSettingNames[] = {
     {"saturation", CameraSetting::kSaturation},
     {"vflip", CameraSetting::kVerticalFlip},
     {"hmirror", CameraSetting::kHorizontalMirror},
+    {"flash", CameraSetting::kFlash},
 };
 
 bool isBetween(int value, int minimum, int maximum) {
@@ -51,6 +52,7 @@ bool isCameraSettingValueValid(CameraSetting setting, int value) {
       return isBetween(value, -2, 2);
     case CameraSetting::kVerticalFlip:
     case CameraSetting::kHorizontalMirror:
+    case CameraSetting::kFlash:
       return value == 0 || value == 1;
   }
   return false;

@@ -246,7 +246,8 @@ Dependencies point from adapters toward the core and ports:
   provisioning, recording/SD, security, and streaming implementations.
 - `src/config/*_config.h` keeps compile-time settings split by responsibility
   instead of exposing one global configuration header.
-- `web/` contains separate HTML, CSS, and JavaScript sources.
+- `web/` contains separate HTML, CSS, and JavaScript sources plus a versioned
+  snapshot of the shared `esp-ui-kit` design system.
 - `scripts/embed_web_assets.py` combines those files into self-contained pages
   in the PlatformIO build directory for reliable captive-portal use.
 - `src/main.cpp` is the composition root.

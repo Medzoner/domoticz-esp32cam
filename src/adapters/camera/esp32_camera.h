@@ -17,6 +17,7 @@ class Esp32Camera final : public ports::CameraPort {
 
  private:
   SemaphoreHandle_t mutex_ = nullptr;
+  bool flashEnabled_ = false;
 };
 
 }  // namespace app::adapters

@@ -14,7 +14,7 @@
   </header>
   <section class="card">
     <h2>Nearby networks</h2>
-    <div class="row"><button id="scan" type="button">Scan again</button><span id="scanStatus" class="muted">Looking for networks…</span></div>
+    <div class="row"><button id="scan" type="button">Scan again</button><span id="scanStatus" class="muted" role="status" aria-live="polite">Looking for networks…</span></div>
     <ul id="nets" class="nets"></ul>
     <form method="post" action="/save" autocomplete="off">
       <label class="lbl" for="ssid">Network name</label>

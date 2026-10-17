@@ -15,9 +15,11 @@ def read_asset(name: str) -> str:
 
 def inline_page(template_name: str, css_name: str, js_name: str | None = None) -> str:
     page = read_asset(template_name)
-    page = page.replace("{{STYLE}}", f"<style>\n{read_asset(css_name)}\n</style>")
+    styles = "\n".join((read_asset("vendor/esp-ui.css"), read_asset(css_name)))
+    page = page.replace("{{STYLE}}", f"<style>\n{styles}\n</style>")
     if js_name is not None:
-        page = page.replace("{{SCRIPT}}", f"<script>\n{read_asset(js_name)}\n</script>")
+        scripts = "\n".join((read_asset("vendor/esp-ui.js"), read_asset(js_name)))
+        page = page.replace("{{SCRIPT}}", f"<script>\n{scripts}\n</script>")
     return page
 
 

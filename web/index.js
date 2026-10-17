@@ -1,6 +1,6 @@
 'use strict';
 
-const $ = id => document.getElementById(id);
+const $ = EspUi.byId;
 const image = $('camera');
 const placeholder = $('placeholder');
 const playback = $('playback');
@@ -15,17 +15,8 @@ let healthLoading = false;
 let recordingsLoaded = false;
 let recordingWasActive = false;
 
-const memory = value => value >= 1048576
-  ? `${(value / 1048576).toFixed(1)} MiB`
-  : `${Math.round(value / 1024)} KiB`;
+const memory = EspUi.formatBytes;
 const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
-
-function duration(ms) {
-  const seconds = Math.floor(ms / 1000);
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor(seconds % 3600 / 60);
-  return `${hours}h ${minutes}m ${seconds % 60}s`;
-}
 
 function displayImage(src) {
   image.src = src;
@@ -160,6 +151,7 @@ async function loadStatus() {
     $('size').value = state.framesize;
     $('vflip').checked = state.vflip;
     $('hmirror').checked = state.hmirror;
+    $('flash').checked = state.flash;
   } catch (error) {
     console.warn('camera settings unavailable', error);
   }
@@ -172,9 +164,9 @@ async function loadHealth() {
     const response = await fetch('/health', {cache: 'no-store'});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const state = await response.json();
-    $('health').textContent = '● Online';
-    $('health').classList.add('online');
-    $('uptime').textContent = duration(state.uptime_ms);
+    EspUi.setConnection($('health'), true);
+    $('uptime').textContent = EspUi.formatDuration(state.uptime_ms);
+    $('temperature').textContent = `${state.chip_temperature_c.toFixed(1)} °C`;
     $('server').textContent = state.stream_server ? 'Ready' : 'Stopped';
     $('streamState').textContent = state.stream_active ? 'Streaming' : 'Idle';
     $('clients').textContent = state.stream_clients;
@@ -211,8 +203,7 @@ async function loadHealth() {
     }
     $('lastUpdate').textContent = `Updated ${new Date().toLocaleTimeString()}`;
   } catch {
-    $('health').textContent = '● Offline';
-    $('health').classList.remove('online');
+    EspUi.setConnection($('health'), false);
     $('lastUpdate').textContent = 'Health endpoint unavailable';
   } finally {
     healthLoading = false;
@@ -248,7 +239,7 @@ for (const name of ['quality', 'brightness', 'contrast']) {
   $(name).oninput = event => $(`${name}Value`).value = event.target.value;
   $(name).onchange = event => control(name, event.target.value);
 }
-for (const name of ['vflip', 'hmirror']) {
+for (const name of ['vflip', 'hmirror', 'flash']) {
   $(name).onchange = event => control(name, event.target.checked ? 1 : 0);
 }
 image.onerror = () => {

@@ -69,6 +69,10 @@ bool Esp32Camera::begin() {
   if (esp_camera_init(&config) != ESP_OK) {
     return false;
   }
+#if CAMERA_FLASH_GPIO >= 0
+  pinMode(CAMERA_FLASH_GPIO, OUTPUT);
+  digitalWrite(CAMERA_FLASH_GPIO, LOW);
+#endif
   sensor_t* sensor = esp_camera_sensor_get();
   return sensor->set_vflip(sensor, CAMERA_DEFAULT_VFLIP) == 0 &&
          sensor->set_hmirror(sensor, CAMERA_DEFAULT_HMIRROR) == 0;
@@ -131,6 +135,13 @@ bool Esp32Camera::apply(core::CameraSetting setting, int value) {
     case core::CameraSetting::kHorizontalMirror:
       result = sensor->set_hmirror(sensor, value);
       break;
+    case core::CameraSetting::kFlash:
+#if CAMERA_FLASH_GPIO >= 0
+      flashEnabled_ = value == 1;
+      digitalWrite(CAMERA_FLASH_GPIO, flashEnabled_ ? HIGH : LOW);
+      result = 0;
+#endif
+      break;
   }
   xSemaphoreGive(mutex_);
   return result == 0;
@@ -151,6 +162,7 @@ core::CameraStatus Esp32Camera::status() {
   result.saturation = sensor->status.saturation;
   result.verticalFlip = sensor->status.vflip;
   result.horizontalMirror = sensor->status.hmirror;
+  result.flashEnabled = flashEnabled_;
   xSemaphoreGive(mutex_);
   return result;
 }
