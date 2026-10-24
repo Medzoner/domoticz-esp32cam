@@ -40,9 +40,9 @@ jobs:
     timeout-minutes: 20
     permissions:
       actions: write
+      checks: write
       contents: read
       pull-requests: read
-      statuses: write
     steps:
       - name: Dispatch CI and report its status
         env:
@@ -54,10 +54,12 @@ jobs:
           branch="$(jq --exit-status --raw-output '.head.ref' <<< "$pull_request")"
           sha="$(jq --exit-status --raw-output '.head.sha' <<< "$pull_request")"
 
-          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$sha" \
-            -f state=pending \
-            -f context='Test, analyze, and build' \
-            -f description='Release PR validation is running' >/dev/null
+          check_id="$(gh api --method POST "repos/$GITHUB_REPOSITORY/check-runs" \
+            -f name='Test, analyze, and build' \
+            -f head_sha="$sha" \
+            -f status=in_progress \
+            -f started_at="$(date --utc +%Y-%m-%dT%H:%M:%SZ)" \
+            --jq '.id')"
 
           gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
 
@@ -76,10 +78,12 @@ jobs:
             sleep 5
           done
           if [ -z "$run_id" ]; then
-            gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$sha" \
-              -f state=error \
-              -f context='Test, analyze, and build' \
-              -f description='Could not locate the dispatched CI run' >/dev/null
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/check-runs/$check_id" \
+              -f status=completed \
+              -f conclusion=failure \
+              -f completed_at="$(date --utc +%Y-%m-%dT%H:%M:%SZ)" \
+              -f 'output[title]=Release PR validation failed' \
+              -f 'output[summary]=Could not locate the dispatched CI run.' >/dev/null
             exit 1
           fi
 
@@ -90,11 +94,13 @@ jobs:
             state=success
             description='Release PR validation passed'
           fi
-          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$sha" \
-            -f state="$state" \
-            -f context='Test, analyze, and build' \
-            -f description="$description" \
-            -f target_url="$run_url" >/dev/null
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/check-runs/$check_id" \
+            -f status=completed \
+            -f conclusion="$state" \
+            -f completed_at="$(date --utc +%Y-%m-%dT%H:%M:%SZ)" \
+            -f details_url="$run_url" \
+            -f "output[title]=$description" \
+            -f 'output[summary]=See the dispatched CI run for tests, analysis, builds, and artifacts.' >/dev/null
           [ "$state" = success ]
 
   publish-firmware:
