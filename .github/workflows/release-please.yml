@@ -33,22 +33,69 @@ jobs:
           manifest-file: .release-please-manifest.json
 
   validate-release-pr:
-    name: Trigger release PR validation
+    name: Validate release PR
     needs: release-please
     if: needs.release-please.outputs.prs-created == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     permissions:
       actions: write
       contents: read
+      pull-requests: read
+      statuses: write
     steps:
-      - name: Dispatch CI for the generated branch
+      - name: Dispatch CI and report its status
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_PR: ${{ needs.release-please.outputs.pr }}
         run: |
-          branch="$(jq --exit-status --raw-output '.headBranchName' <<< "$RELEASE_PR")"
+          number="$(jq --exit-status --raw-output '.number' <<< "$RELEASE_PR")"
+          pull_request="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number")"
+          branch="$(jq --exit-status --raw-output '.head.ref' <<< "$pull_request")"
+          sha="$(jq --exit-status --raw-output '.head.sha' <<< "$pull_request")"
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$sha" \
+            -f state=pending \
+            -f context='Test, analyze, and build' \
+            -f description='Release PR validation is running' >/dev/null
+
           gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+
+          run_id=''
+          for attempt in {1..12}; do
+            run_id="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow ci.yml \
+              --branch "$branch" \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,headSha \
+              --jq ".[] | select(.headSha == \"$sha\") | .databaseId" \
+              | head -n 1)"
+            [ -n "$run_id" ] && break
+            sleep 5
+          done
+          if [ -z "$run_id" ]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$sha" \
+              -f state=error \
+              -f context='Test, analyze, and build' \
+              -f description='Could not locate the dispatched CI run' >/dev/null
+            exit 1
+          fi
+
+          run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id"
+          state=failure
+          description='Release PR validation failed'
+          if gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status; then
+            state=success
+            description='Release PR validation passed'
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$sha" \
+            -f state="$state" \
+            -f context='Test, analyze, and build' \
+            -f description="$description" \
+            -f target_url="$run_url" >/dev/null
+          [ "$state" = success ]
 
   publish-firmware:
     name: Publish firmware assets
