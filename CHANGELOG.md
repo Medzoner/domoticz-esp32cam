@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.0...v0.1.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* resolve tags in reusable release workflow ([daad74e](https://github.com/Medzoner/domoticz-esp32cam/commit/daad74e1289b5c7cf60594952638bac479eacbc3))
+
 ## 0.1.0 (2026-10-24)
 
 
