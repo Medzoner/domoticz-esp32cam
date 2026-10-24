@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible firmware or web-interface problem
+title: "bug: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve domoticz-esp32cam. Remove credentials and private network details from logs.
+  - type: dropdown
+    id: board
+    attributes:
+      label: Board
+      options:
+        - AI Thinker ESP32-CAM
+        - Espressif ESP-EYE
+        - Espressif ESP32-S3 CAM LCD
+        - M5Stack Camera PSRAM
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version
+      description: Release tag or commit SHA.
+      placeholder: v0.1.0 or 0123abc
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Flash ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Do not include passwords, cookies, public IP addresses, or private recordings.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched for an existing issue describing this problem.
+          required: true
+        - label: I removed credentials and sensitive network or camera data.
+          required: true

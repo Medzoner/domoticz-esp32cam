@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "7e4d92ea05e580ffdf6ce399de2d5c2d1bc1ee1d",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "domoticz-esp32cam",
+      "include-v-in-tag": true,
+      "include-component-in-tag": false,
+      "initial-version": "0.1.0"
+    }
+  }
+}

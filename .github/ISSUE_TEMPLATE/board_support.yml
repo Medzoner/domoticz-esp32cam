@@ -1,0 +1,38 @@
+name: Board support request
+description: Request or contribute support for another ESP32 camera board
+title: "feat(board): support "
+labels: [board-support, enhancement, triage]
+body:
+  - type: input
+    id: board
+    attributes:
+      label: Board name and revision
+    validations:
+      required: true
+  - type: input
+    id: docs
+    attributes:
+      label: Hardware documentation
+      description: Link to the official schematic, pinout, or board definition.
+    validations:
+      required: true
+  - type: input
+    id: sensor
+    attributes:
+      label: Camera sensor
+      placeholder: OV2640
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Capabilities and constraints
+      description: PSRAM size, storage wiring, USB/UART flashing, and known pin conflicts.
+    validations:
+      required: true
+  - type: checkboxes
+    id: hardware
+    attributes:
+      label: Hardware access
+      options:
+        - label: I have this board and can test firmware builds on real hardware.

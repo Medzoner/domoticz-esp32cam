@@ -1,6 +1,12 @@
 name: Release
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to build and publish
+        required: true
+        type: string
   push:
     tags:
       - "v*"
@@ -13,6 +19,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -30,12 +40,12 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
           REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_NAME" = "workflow_call" ]; then
             tag="$INPUT_TAG"
           else
             tag="$REF_NAME"
           fi
-          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'; then
+          if ! printf '%s' "$tag" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
             echo "Unsupported release tag: $tag" >&2
             exit 1
           fi
@@ -60,7 +70,20 @@ jobs:
         run: cp include/secrets.example.h include/secrets.h
 
       - name: Validate release source
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
+          version="${RELEASE_TAG#v}"
+          test "$(cat version.txt)" = "$version"
+          VERSION="$version" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path(".release-please-manifest.json").read_text())
+          if manifest.get(".") != os.environ["VERSION"]:
+              raise SystemExit("release tag and manifest version disagree")
+          PY
           pio test --environment native
           pio check --environment native
           pio check --environment esp32cam
@@ -86,14 +109,24 @@ jobs:
             cp ".pio/build/$environment/firmware.bin" \
               "dist/esp32cam-${RELEASE_TAG}-${environment}-firmware.bin"
           done
+          (cd dist && sha256sum esp32cam-*.tar.gz esp32cam-*-firmware.bin > SHA256SUMS)
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
-          gh release create "$RELEASE_TAG" \
-            "dist/esp32cam-${RELEASE_TAG}.tar.gz" \
-            dist/esp32cam-*-firmware.bin \
-            --generate-notes \
-            --title "$RELEASE_TAG"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
+              "dist/esp32cam-${RELEASE_TAG}.tar.gz" \
+              dist/esp32cam-*-firmware.bin \
+              dist/SHA256SUMS \
+              --clobber
+          else
+            gh release create "$RELEASE_TAG" \
+              "dist/esp32cam-${RELEASE_TAG}.tar.gz" \
+              dist/esp32cam-*-firmware.bin \
+              dist/SHA256SUMS \
+              --generate-notes \
+              --title "$RELEASE_TAG"
+          fi

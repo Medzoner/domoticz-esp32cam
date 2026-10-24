@@ -1,5 +1,10 @@
 # ESP32-CAM Multi-Client Streamer
 
+[![CI](https://github.com/Medzoner/domoticz-esp32cam/actions/workflows/ci.yml/badge.svg)](https://github.com/Medzoner/domoticz-esp32cam/actions/workflows/ci.yml)
+[![Release](https://github.com/Medzoner/domoticz-esp32cam/actions/workflows/release-please.yml/badge.svg)](https://github.com/Medzoner/domoticz-esp32cam/actions/workflows/release-please.yml)
+[![GitHub release](https://img.shields.io/github/v/release/Medzoner/domoticz-esp32cam?display_name=tag&sort=semver)](https://github.com/Medzoner/domoticz-esp32cam/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 PlatformIO firmware for several ESP32 camera boards. It provides a responsive
 control interface, JPEG snapshots, and one shared MJPEG stream for multiple
 consumers such as MotionEye, Home Assistant, and OctoPrint.
@@ -119,6 +124,10 @@ Provisioning stops after 2.5 seconds once credentials are saved, or after ten
 minutes without a submission when the portal was opened by a failed connection.
 
 ## Local Development
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the full
+setup, architecture, validation, commit, and pull request guidelines. Please use
+the issue forms before starting a large feature or a new board port.
 
 Install the pinned CI toolchain:
 
@@ -271,7 +280,11 @@ before creating anything.
 
 ## Releases
 
-Push a semantic version tag to build and publish a GitHub Release:
+Releases are automated with Release Please. Conventional Commit titles determine
+the next Semantic Version, and merging the generated release pull request creates
+the tag, changelog, GitHub Release, checksums, and firmware assets.
+
+Maintainers can still push a semantic version tag as a recovery path:
 
 ```bash
 git tag v1.0.0
@@ -285,7 +298,16 @@ firmware, checksums, and the complete `esptool.py` command with the required
 flash offsets.
 
 The release workflow can also be started manually for an existing tag from the
-GitHub Actions interface.
+GitHub Actions interface. See [the release guide](docs/RELEASING.md) for the
+complete lifecycle and verification checklist.
+
+## Community
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+- Ask usage questions in [GitHub Discussions](https://github.com/Medzoner/domoticz-esp32cam/discussions).
+- Use the structured issue forms for bugs, features, and board support.
+- Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
+- Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

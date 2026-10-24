@@ -33,6 +33,24 @@ jobs:
       - name: Install PlatformIO
         run: python -m pip install --requirement requirements-ci.txt
 
+      - name: Validate repository metadata
+        run: |
+          yamllint .github .yamllint.yml
+          python -m json.tool .release-please-manifest.json >/dev/null
+          python -m json.tool release-please-config.json >/dev/null
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          version = Path("version.txt").read_text(encoding="utf-8").strip()
+          manifest = json.loads(Path(".release-please-manifest.json").read_text())
+          if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+              raise SystemExit(f"invalid version.txt value: {version}")
+          if manifest.get(".") != version:
+              raise SystemExit("version.txt and release manifest disagree")
+          PY
+
       - name: Create build-only configuration
         run: cp include/secrets.example.h include/secrets.h
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Medzoner/domoticz-esp32cam/security/advisories/new
+    about: Report vulnerabilities privately instead of opening a public issue.
+  - name: Usage and troubleshooting
+    url: https://github.com/Medzoner/domoticz-esp32cam/discussions
+    about: Ask questions and share camera setups in GitHub Discussions.
