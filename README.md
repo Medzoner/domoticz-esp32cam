@@ -26,6 +26,18 @@ consumers such as MotionEye, Home Assistant, and OctoPrint.
 - Native unit tests and Cppcheck static analysis
 - GitHub Actions CI and tagged firmware releases
 
+## Web Interface
+
+The responsive dashboard keeps the live stream, camera controls, recording
+management, and system health visible from desktop and mobile browsers.
+
+| Desktop | Mobile |
+|---|---|
+| [![Desktop dashboard showing the camera stream, controls, recording management, and telemetry](docs/images/ui-dashboard.png)](docs/images/ui-dashboard.png) | [![Mobile dashboard showing the responsive camera interface](docs/images/ui-mobile.png)](docs/images/ui-mobile.png) |
+
+> The screenshots use a simulated camera feed and demonstration telemetry; no
+> real camera image, credentials, or network details are included.
+
 ## Streaming Performance
 
 The camera uses two PSRAM frame buffers with latest-frame capture to minimize
