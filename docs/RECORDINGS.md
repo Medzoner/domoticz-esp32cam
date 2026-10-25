@@ -40,6 +40,45 @@ that later frames were never lost or that the JPEG bytes are uncorrupted.
   result here. A full-length `write()` is not a durability guarantee, and this
   change does not detect every card/controller/filesystem failure.
 
+## Concurrency and temporary SD unavailability
+
+The SD adapter is initialized once in setup before the worker tasks are started.
+After initialization its mutex protects file handles, reader metadata and all
+multi-field/64-bit statistics. Only the active/pending capture-demand flags are
+read without that mutex; they are C++ atomics, not `volatile`. They are a capture
+hint, not a transactional snapshot.
+
+- A failed stats lock returns an explicitly invalid snapshot, without reading
+  live counters. `/health` exposes `recording_stats_valid: false` and degraded
+  status. Other recording fields in that response are placeholders, **not**
+  evidence of an idle recorder, empty card or zero capacity. Disabled SD support
+  has a valid, unsupported snapshot instead of pretending the mutex failed.
+- The dashboard shows an unavailable/retrying state, disables recording actions
+  and does not automatically fetch a misleading empty listing while stats are
+  invalid. Normal polling restores controls when telemetry becomes available.
+- `/recording/stop` returns HTTP 503 if the stop request could not be accepted.
+  A successful response means queued, not flushed/stopped; poll health afterward.
+  An accepted command survives a later service-lock timeout and can be serviced
+  on a subsequent iteration. Failed requests may be retried by the client.
+  Commands are serialized under the mutex: the last **accepted** command wins.
+  A start while active cancels a queued stop without resetting the segment;
+  a stop cancels a pending start. A failed command changes neither intent.
+- Listing failure is distinct from an empty list. `/recordings` returns HTTP 503
+  on failed telemetry/list acquisition (HTTP 409 still denotes a known active
+  recording). No filesystem listing is attempted after a lock failure.
+- Reader size is copied under the mutex with explicit failure, not inferred as
+  an empty file on timeout. Reader closure also reports failure. The playback
+  worker closes the client socket and retries reader cleanup, yielding between
+  attempts, before accepting another client. It cannot silently abandon a live
+  reader that would block later recording starts. If the underlying driver
+  remains stuck, cleanup can remain pending indefinitely; this is not a global
+  SD-operation deadline or a guarantee of playback availability.
+
+The internal RecordingPort now reports success explicitly for stop, list,
+reader-size and reader-close operations. Alternative adapters must preserve
+these contracts, including zeroing list/size outputs on failure and retaining
+reader ownership until successful closure.
+
 ## Non-destructive host recovery
 
 Python 3, standard library only:
@@ -83,7 +122,9 @@ for physical SD fault-injection and soak-test requirements.
 
 ```sh
 pio test -e native -e native-sanitized
+pio test -e native-storage -e native-storage-sanitized
 python -m unittest discover -s test/python -v
+node --test test/web/recording_health.test.cjs
 ```
 
 Native tests exercise positive short reads, EOF vs truncation/read failure,
@@ -92,3 +133,14 @@ exercise truncation at every offset of a small generated container, size bounds,
 no-overwrite recovery and failed publication cleanup. No real SD media,
 filesystem fault, power interruption or video decoder is exercised by these
 tests. Back up valuable media before any hardware fault injection.
+
+The dedicated storage environments compile the **real** SdMjpegRecorder source
+against test-only FreeRTOS/filesystem doubles in `test/support/sd_recorder`.
+They force lock failures, verify invalid telemetry/explicit command failures,
+exercise retryable reader cleanup and short writes, and instrument filesystem
+calls to reject access without the fake mutex. The doubles do not model task
+scheduling, priority inheritance, FAT, DMA or a real SD driver. ASan/UBSan do
+not detect all data races; this is not a ThreadSanitizer or hardware concurrency
+test. Node 18+ tests exercise dashboard data behavior with a minimal fake DOM,
+not browser layout. CI's pinned Ubuntu image supplies Node; no npm packages are
+needed.

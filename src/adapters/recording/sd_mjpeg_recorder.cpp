@@ -28,6 +28,8 @@ class StorageLock {
     }
   }
   explicit operator bool() const { return locked_; }
+  StorageLock(const StorageLock&) = delete;
+  StorageLock& operator=(const StorageLock&) = delete;
 
  private:
   SemaphoreHandle_t mutex_;
@@ -63,10 +65,12 @@ bool SdMjpegRecorder::requestStart() {
   if (!lock || !available_ || reader_) {
     return false;
   }
+  // Last accepted command wins. A start while still active cancels a queued
+  // stop rather than acknowledging a request that service() would undo.
+  stopRequested_ = false;
   if (active_ || startRequested_) {
     return true;
   }
-  stopRequested_ = false;
   startRequested_ = true;
   return true;
 #else
@@ -74,15 +78,18 @@ bool SdMjpegRecorder::requestStart() {
 #endif
 }
 
-void SdMjpegRecorder::requestStop() {
+bool SdMjpegRecorder::requestStop() {
 #if APP_ENABLE_SD_RECORDING
   StorageLock lock(storageMutex_);
   if (!lock) {
-    return;
+    return false;
   }
-#endif
   startRequested_ = false;
   stopRequested_ = true;
+  return true;
+#else
+  return false;
+#endif
 }
 
 bool SdMjpegRecorder::wantsFrames() const {
@@ -161,8 +168,12 @@ bool SdMjpegRecorder::appendFrame(const uint8_t* data, std::size_t size) {
 ports::RecordingStats SdMjpegRecorder::stats() const {
 #if APP_ENABLE_SD_RECORDING
   StorageLock lock(storageMutex_);
-#endif
-  return {APP_ENABLE_SD_RECORDING != 0,
+  if (!lock) {
+    ports::RecordingStats unavailable{};
+    unavailable.supported = true;
+    return unavailable;
+  }
+  return {true,
           available_,
           active_,
           startRequested_,
@@ -172,24 +183,30 @@ ports::RecordingStats SdMjpegRecorder::stats() const {
           failureCount_,
           byteCount_,
           totalBytes_,
-          freeBytes_};
+          freeBytes_,
+          true};
+#else
+  ports::RecordingStats unsupported{};
+  unsupported.snapshotValid = true;
+  return unsupported;
+#endif
 }
 
-std::size_t SdMjpegRecorder::list(ports::RecordingFileInfo* files,
-                                  std::size_t capacity) {
+bool SdMjpegRecorder::list(ports::RecordingFileInfo* files, std::size_t capacity,
+                           std::size_t& count) {
+  count = 0;
 #if APP_ENABLE_SD_RECORDING
   StorageLock lock(storageMutex_);
   if (!lock) {
-    return 0;
+    return false;
   }
-  if (!available_ || active_ || files == nullptr || capacity == 0) {
-    return 0;
+  if (!available_ || active_ || startRequested_ || files == nullptr || capacity == 0) {
+    return false;
   }
   fs::File root = SD_MMC.open("/");
   if (!root || !root.isDirectory()) {
-    return 0;
+    return false;
   }
-  std::size_t count = 0;
   for (fs::File entry = root.openNextFile(); entry && count < capacity;
        entry = root.openNextFile()) {
     uint32_t index = 0;
@@ -209,11 +226,11 @@ std::size_t SdMjpegRecorder::list(ports::RecordingFileInfo* files,
     }
     files[position] = value;
   }
-  return count;
+  return true;
 #else
   static_cast<void>(files);
   static_cast<void>(capacity);
-  return 0;
+  return false;
 #endif
 }
 
@@ -282,19 +299,39 @@ std::size_t SdMjpegRecorder::read(uint8_t* destination, std::size_t capacity) {
 #endif
 }
 
-uint64_t SdMjpegRecorder::readerSize() const { return readerSize_; }
-
-void SdMjpegRecorder::closeReader() {
+bool SdMjpegRecorder::readerSize(uint64_t& size) const {
+  size = 0;
 #if APP_ENABLE_SD_RECORDING
   StorageLock lock(storageMutex_);
+  if (!lock || !reader_) {
+    return false;
+  }
+  size = readerSize_;
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool SdMjpegRecorder::closeReader() {
+#if APP_ENABLE_SD_RECORDING
+  // A failed mutex allocation cannot have created a reader in the first place.
+  // begin() is called once during setup, before publishing this adapter.
+  if (storageMutex_ == nullptr) {
+    return true;
+  }
+  StorageLock lock(storageMutex_);
   if (!lock) {
-    return;
+    return false;
   }
   if (reader_) {
     reader_.close();
   }
-#endif
   readerSize_ = 0;
+  return true;
+#else
+  return true;
+#endif
 }
 
 #if APP_ENABLE_SD_RECORDING

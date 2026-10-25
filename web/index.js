@@ -185,25 +185,39 @@ async function loadHealth() {
     $('maxAlloc').textContent = memory(state.max_alloc_heap);
     $('stack').textContent = `${Math.round(state.stream_stack_headroom / 1024 * 10) / 10} KiB`;
     const recordingActive = state.recording_active || state.recording_pending;
+    const recordingKnown = state.recording_stats_valid !== false;
     $('recordingPanel').hidden = !state.recording_supported;
     if (state.recording_supported) {
-      $('recordingStatus').textContent = !state.sd_available
+      $('recordingStatus').textContent = !recordingKnown
+        ? 'SD status unavailable — retrying'
+        : !state.sd_available
         ? 'SD card unavailable'
         : recordingActive
           ? `Recording segment ${String(state.recording_segment).padStart(5, '0')}`
           : 'Ready';
-      $('recordStart').disabled = !state.sd_available || recordingActive;
-      $('recordStop').disabled = !recordingActive;
-      $('recordRefresh').disabled = recordingActive;
-      $('recordedSize').textContent = memory(state.recording_bytes);
-      $('recordedFrames').textContent = state.recording_frames;
-      $('sdSpace').textContent = `${memory(state.sd_free_bytes)} free / ${memory(state.sd_total_bytes)}`;
-      if (!recordingActive && (!recordingsLoaded || recordingWasActive)) loadRecordings();
-      recordingWasActive = recordingActive;
+      $('recordStart').disabled = !recordingKnown || !state.sd_available || recordingActive;
+      $('recordStop').disabled = !recordingKnown || !recordingActive;
+      $('recordRefresh').disabled = !recordingKnown || recordingActive;
+      $('recordedSize').textContent = recordingKnown ? memory(state.recording_bytes) : 'Unknown';
+      $('recordedFrames').textContent = recordingKnown ? state.recording_frames : 'Unknown';
+      $('sdSpace').textContent = recordingKnown
+        ? `${memory(state.sd_free_bytes)} free / ${memory(state.sd_total_bytes)}`
+        : 'Unknown';
+      if (recordingKnown) {
+        if (!recordingActive && (!recordingsLoaded || recordingWasActive)) loadRecordings();
+        recordingWasActive = recordingActive;
+      }
     }
     $('lastUpdate').textContent = `Updated ${new Date().toLocaleTimeString()}`;
   } catch {
     EspUi.setConnection($('health'), false);
+    $('recordingStatus').textContent = 'Recording status unavailable — retrying';
+    for (const id of ['recordStart', 'recordStop', 'recordRefresh']) {
+      $(id).disabled = true;
+    }
+    for (const id of ['recordedSize', 'recordedFrames', 'sdSpace']) {
+      $(id).textContent = 'Unknown';
+    }
     $('lastUpdate').textContent = 'Health endpoint unavailable';
   } finally {
     healthLoading = false;

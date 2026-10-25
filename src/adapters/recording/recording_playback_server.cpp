@@ -97,8 +97,12 @@ void RecordingPlaybackServer::run() {
     client.setTimeout(config::kClientReadTimeoutMs);
     client.setNoDelay(true);
     handleClient(client);
-    recordings_.closeReader();
     client.stop();
+    // Do not abandon the reader after a transient lock timeout. No new client
+    // is accepted until cleanup succeeds; the HTTP task remains independent.
+    while (!recordings_.closeReader()) {
+      vTaskDelay(pdMS_TO_TICKS(config::kIdleDelayMs));
+    }
   }
 }
 
@@ -128,7 +132,12 @@ bool RecordingPlaybackServer::play(WiFiClient& client, uint32_t index) {
     return false;
   }
   uint8_t magic[sizeof(core::recording::kFileMagic)]{};
-  const uint64_t fileSize = recordings_.readerSize();
+  uint64_t fileSize = 0;
+  if (!recordings_.readerSize(fileSize)) {
+    writeAll(client, reinterpret_cast<const uint8_t*>(kBusyResponse),
+             sizeof(kBusyResponse) - 1);
+    return false;
+  }
   if (fileSize < sizeof(magic) || !readExact(magic, sizeof(magic)) ||
       std::memcmp(magic, core::recording::kFileMagic, sizeof(magic)) != 0) {
     writeAll(client, reinterpret_cast<const uint8_t*>(kNotFoundResponse),
@@ -190,7 +199,12 @@ bool RecordingPlaybackServer::download(WiFiClient& client, uint32_t index) {
     return false;
   }
   char header[256]{};
-  uint64_t remaining = recordings_.readerSize();
+  uint64_t remaining = 0;
+  if (!recordings_.readerSize(remaining)) {
+    writeAll(client, reinterpret_cast<const uint8_t*>(kBusyResponse),
+             sizeof(kBusyResponse) - 1);
+    return false;
+  }
   const int length = snprintf(
       header, sizeof(header),
       "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
