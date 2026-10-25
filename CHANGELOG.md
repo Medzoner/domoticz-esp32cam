@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.2...v0.1.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* expose stream and playback startup failures ([#8](https://github.com/Medzoner/domoticz-esp32cam/issues/8)) ([4956542](https://github.com/Medzoner/domoticz-esp32cam/commit/4956542dd26e00611e508d1809cfc0cc626afb8a))
+
 ## [0.1.2](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.1...v0.1.2) (2026-10-25)
 
 
