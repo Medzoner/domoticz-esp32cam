@@ -32,6 +32,8 @@ class RecordingPort {
   virtual void requestStop() = 0;
   virtual bool wantsFrames() const = 0;
   virtual void service() = 0;
+  // Synchronous: consume/copy the bytes before returning; never retain data.
+  // The caller may reuse its delivery buffer as soon as this call returns.
   virtual bool appendFrame(const uint8_t* data, std::size_t size) = 0;
   virtual RecordingStats stats() const = 0;
   virtual std::size_t list(RecordingFileInfo* files,

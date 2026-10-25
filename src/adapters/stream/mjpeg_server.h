@@ -3,6 +3,8 @@
 #include <WiFi.h>
 
 #include <atomic>
+#include <cstdlib>
+#include <memory>
 
 #include "config/camera_config.h"
 #include "config/stream_config.h"
@@ -25,6 +27,8 @@ struct StreamStats {
   uint8_t targetFps;
   uint8_t jpegQualityOffset;
   uint8_t pressureLevel;
+  uint32_t droppedFrames;
+  uint32_t oversizedFrames;
   IPAddress peer;
 };
 
@@ -60,6 +64,8 @@ class MjpegServer {
   ports::AuthenticationPort& authentication_;
   WiFiServer server_;
   WiFiClient clients_[config::kMaxStreamClients];
+  // Written only by the stream task; camera lease never outlives the copy.
+  std::unique_ptr<uint8_t, decltype(&std::free)> frameBuffer_{nullptr, &std::free};
   // Accessed by both the HTTP task and stream task. Volatile is not C++
   // synchronization. Individual counters are safe, not a transactional snapshot.
   core::ServiceStartup startup_;
@@ -67,6 +73,8 @@ class MjpegServer {
   std::atomic<uint8_t> clientCount_{0};
   std::atomic<uint32_t> sessionCount_{0};
   std::atomic<uint32_t> frameCount_{0};
+  std::atomic<uint32_t> droppedFrames_{0};
+  std::atomic<uint32_t> oversizedFrames_{0};
   std::atomic<uint16_t> framesPerSecondTimes10_{0};
   std::atomic<uint32_t> stackHeadroomBytes_{0};
   std::atomic<uint16_t> averageDeliveryMs_{0};

@@ -49,6 +49,20 @@ latency. The MJPEG server combines each multipart boundary and JPEG header into
 one TCP write, then sends image data in 16 KiB blocks. This reduces socket calls
 while retaining a bounded timeout for slow consumers.
 
+The stream task reserves one reusable 512 KiB PSRAM delivery buffer at startup.
+It copies each JPEG, returns the driver's frame and releases the camera mutex
+**before** sending it to clients or recording it to SD. Network and storage
+stalls can still delay the stream task, but no longer retain the camera mutex.
+This costs one bounded copy per captured frame and 512 KiB of persistent PSRAM;
+there is no per-frame allocation and no fallback to the internal RAM heap.
+
+If the PSRAM reservation fails, `/health` reports the stream service as failed
+and HTTP controls remain available. JPEGs larger than the configured capacity
+are dropped whole, never truncated. Inspect `stream_frame_capacity`,
+`stream_dropped_frames` and `stream_oversized_frames` in `/health`; lower
+resolution or increase the numeric JPEG quality value if oversized drops rise.
+The cap applies to live video and SD recording; snapshots use their own path.
+
 The browser interface uses asynchronous image decoding and automatically
 reconnects with exponential backoff after a stream interruption. It disconnects
 its own stream while the page is hidden, which avoids wasting Wi-Fi bandwidth,
@@ -74,7 +88,7 @@ temporary offset and is removed when conditions recover. `/health` and the web
 interface expose the target FPS, delivery time, quality offset, and pressure
 level.
 
-The web interface renders the complete `/health` payload as a system health
+The web interface renders telemetry from `/health` as a system health
 panel. It refreshes every two seconds, prevents overlapping requests, disables
 HTTP caching, and pauses polling while the browser tab is hidden.
 

@@ -8,6 +8,8 @@ namespace app::config {
 inline constexpr uint16_t kStreamPort = 81;
 inline constexpr std::size_t kMaxStreamClients = 4;
 inline constexpr std::size_t kStreamWriteBlockSize = 16384;
+// One persistent PSRAM-only copy. Never allocate per frame or fall back to DRAM.
+inline constexpr std::size_t kStreamFrameCapacity = 512 * 1024;
 inline constexpr uint32_t kStreamTaskStackSize = 3584;
 inline constexpr uint32_t kStreamTaskPriority = 2;
 inline constexpr uint32_t kStreamTaskCore = 0;
