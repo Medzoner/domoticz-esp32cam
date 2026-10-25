@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.3...v0.1.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* release camera frames before network and SD delivery ([#10](https://github.com/Medzoner/domoticz-esp32cam/issues/10)) ([a1e54e9](https://github.com/Medzoner/domoticz-esp32cam/commit/a1e54e9929019458d9b6d797e864372ab1e12e22))
+
 ## [0.1.3](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.2...v0.1.3) (2026-10-25)
 
 
