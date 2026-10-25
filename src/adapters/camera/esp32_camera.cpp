@@ -4,6 +4,7 @@
 #include <esp_camera.h>
 
 #include "config/camera_config.h"
+#include "core/camera/jpeg_frame.h"
 
 #include "adapters/camera/camera_pins.h"
 
@@ -17,6 +18,11 @@
 
 namespace app::adapters {
 namespace {
+
+static_assert(FRAMESIZE_VGA == core::kVgaFrameSize, "VGA sensor ID changed");
+static_assert(FRAMESIZE_UXGA == core::kUxgaFrameSize, "UXGA sensor ID changed");
+static_assert(FRAMESIZE_SVGA == 9 && FRAMESIZE_XGA == 10 && FRAMESIZE_SXGA == 12,
+              "Update web resolution values for this SDK");
 
 camera_config_t makeCameraConfig() {
   camera_config_t config{};
@@ -47,6 +53,9 @@ camera_config_t makeCameraConfig() {
   config.fb_location = CAMERA_FB_IN_DRAM;
 
   if (psramFound()) {
+    const auto policy = core::frameBufferPolicy(true, config::kDefaultJpegQuality);
+    config.frame_size = static_cast<framesize_t>(policy.allocationFrameSize);
+    config.jpeg_quality = policy.allocationQuality;
     config.fb_count = 2;
     config.grab_mode = CAMERA_GRAB_LATEST;
     config.fb_location = CAMERA_FB_IN_PSRAM;
@@ -66,6 +75,7 @@ bool Esp32Camera::begin() {
   pinMode(14, INPUT_PULLUP);
 #endif
   camera_config_t config = makeCameraConfig();
+  allocatedFrameSize_ = static_cast<uint8_t>(config.frame_size);
   if (esp_camera_init(&config) != ESP_OK) {
     return false;
   }
@@ -74,7 +84,12 @@ bool Esp32Camera::begin() {
   digitalWrite(CAMERA_FLASH_GPIO, LOW);
 #endif
   sensor_t* sensor = esp_camera_sensor_get();
-  return sensor->set_vflip(sensor, CAMERA_DEFAULT_VFLIP) == 0 &&
+  const auto policy = core::frameBufferPolicy(
+      config.fb_location == CAMERA_FB_IN_PSRAM, config::kDefaultJpegQuality);
+  return sensor != nullptr &&
+         sensor->set_framesize(sensor, static_cast<framesize_t>(policy.startupFrameSize)) == 0 &&
+         sensor->set_quality(sensor, policy.startupQuality) == 0 &&
+         sensor->set_vflip(sensor, CAMERA_DEFAULT_VFLIP) == 0 &&
          sensor->set_hmirror(sensor, CAMERA_DEFAULT_HMIRROR) == 0;
 }
 
@@ -86,6 +101,12 @@ bool Esp32Camera::acquire(ports::CameraFrame& frame) {
   }
   camera_fb_t* nativeFrame = esp_camera_fb_get();
   if (nativeFrame == nullptr) {
+    xSemaphoreGive(mutex_);
+    return false;
+  }
+  if (nativeFrame->format != PIXFORMAT_JPEG ||
+      !core::hasJpegBoundaries(nativeFrame->buf, nativeFrame->len)) {
+    esp_camera_fb_return(nativeFrame);
     xSemaphoreGive(mutex_);
     return false;
   }
@@ -106,7 +127,10 @@ void Esp32Camera::release(ports::CameraFrame& frame) {
 }
 
 bool Esp32Camera::apply(core::CameraSetting setting, int value) {
-  if (!core::isCameraSettingValueValid(setting, value) || mutex_ == nullptr ||
+  if (!core::isCameraSettingValueValid(setting, value) ||
+      (setting == core::CameraSetting::kFrameSize &&
+       !core::frameSizeFitsAllocation(value, allocatedFrameSize_)) ||
+      mutex_ == nullptr ||
       xSemaphoreTake(mutex_, pdMS_TO_TICKS(config::kCameraLockTimeoutMs)) !=
           pdTRUE) {
     return false;

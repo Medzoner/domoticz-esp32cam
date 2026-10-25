@@ -4,6 +4,7 @@
 #include <freertos/semphr.h>
 
 #include "ports/camera/camera_port.h"
+#include "core/camera/frame_buffer_policy.h"
 
 namespace app::adapters {
 
@@ -18,6 +19,8 @@ class Esp32Camera final : public ports::CameraPort {
  private:
   SemaphoreHandle_t mutex_ = nullptr;
   bool flashEnabled_ = false;
+  // Initialized before worker tasks start; immutable after camera begin().
+  uint8_t allocatedFrameSize_ = core::kVgaFrameSize;
 };
 
 }  // namespace app::adapters

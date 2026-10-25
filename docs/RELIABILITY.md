@@ -26,6 +26,18 @@ driver, power integrity, or FreeRTOS scheduling.
   is released exactly once before network or SD delivery, including rejection
   paths. The copy remains valid even when the driver immediately reuses its
   frame. This bounds copy memory, not the duration of camera capture or memcpy.
+- Driver buffer allocation uses UXGA with PSRAM, followed by VGA/default quality
+  for normal startup, as in Espressif's Arduino CameraWebServer example. Runtime
+  frame-size controls cannot exceed the resolution used for driver allocation.
+  The driver therefore reserves more PSRAM than the old VGA initialization; the
+  separate 512 KiB delivery copy remains unchanged. Startup can fail if memory
+  is insufficient; actual board memory must be checked after flashing.
+- Camera frames without JPEG SOI/EOI markers (or with non-JPEG format) are
+  returned to the driver and rejected, never streamed/recorded as complete
+  captures. The normal stream drop counter includes those acquisition failures.
+  These inexpensive guards do not validate JPEG entropy data, dimensions or
+  prove that an otherwise complete JPEG has no visual artifact. A network
+  disconnect can still interrupt a frame already being delivered.
 - Oversized JPEGs are dropped whole rather than truncated or used to grow the
   buffer. `/health` exposes the configured `stream_frame_capacity`, total
   `stream_dropped_frames` (acquisition, validation or formatting failure), and
@@ -122,6 +134,7 @@ warm-up; a one-off heap delta is not evidence of a leak.
 | Camera contention | With a stalled live reader and SD load, request camera controls and snapshots repeatedly | Capture lease released before delivery; measure actual control/snapshot latency and verify recovery without claiming a hard bound |
 | Copy capacity | In a disposable test build reduce the frame cap below JPEG size, then restore it | Oversized and dropped counters rise; no partial JPEG is emitted or recorded; controls work; normal build resumes delivery |
 | Copy allocation | In a disposable build force the PSRAM reservation to fail | Stream reports failed; no live listener; HTTP diagnosis works; no DRAM fallback or reboot loop |
+| Resolution changes | Switch between VGA, XGA and UXGA, including detailed scenes; inspect JPEG structure/dimensions and free PSRAM without publishing private images | Driver and delivery buffers remain available; incomplete captures are rejected; no visual/durability guarantee inferred from SOI/EOI alone |
 | SD full/failure | Fill a disposable test card; separately test missing/bad media | Explicit failure; existing files not silently deleted; controls usable |
 | Soak | At least 24 hours with periodic connects/disconnects and health samples | No unexplained reset, deadlock, progressive heap loss or exhausted client slots |
 | Rollover | Exercise a test firmware clock near wrap or run beyond 49.7 days | No indefinite socket wait or broken interval scheduling |

@@ -49,6 +49,15 @@ latency. The MJPEG server combines each multipart boundary and JPEG header into
 one TCP write, then sends image data in 16 KiB blocks. This reduces socket calls
 while retaining a bounded timeout for slow consumers.
 
+With PSRAM, the driver is initialized at UXGA/high JPEG quality to reserve
+buffers for the maximum supported resolution, then the active sensor is reset
+to VGA/default quality. Initializing only at VGA and later requesting larger
+frames can exceed the driver's preallocated capacity. This follows
+[Espressif's CameraWebServer guidance](https://github.com/espressif/arduino-esp32/blob/2.0.17/libraries/ESP32/examples/Camera/CameraWebServer/CameraWebServer.ino).
+Without PSRAM, frame-size controls are capped at the VGA allocation. Obvious
+missing JPEG start/end markers are rejected before returning a camera lease;
+this is not full JPEG decoding or a guarantee against all visual corruption.
+
 The stream task reserves one reusable 512 KiB PSRAM delivery buffer at startup.
 It copies each JPEG, returns the driver's frame and releases the camera mutex
 **before** sending it to clients or recording it to SD. Network and storage
