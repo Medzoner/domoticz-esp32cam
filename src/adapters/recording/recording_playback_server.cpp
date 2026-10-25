@@ -55,11 +55,21 @@ RecordingPlaybackServer::RecordingPlaybackServer(
       authentication_(authentication),
       server_(config::kPlaybackPort) {}
 
-void RecordingPlaybackServer::begin() {
-  xTaskCreatePinnedToCore(taskEntry, config::kPlaybackTaskName,
-                          config::kPlaybackTaskStackSize, this,
-                          config::kPlaybackTaskPriority, &taskHandle_,
-                          config::kPlaybackTaskCore);
+bool RecordingPlaybackServer::begin() {
+  return startup_.start([this] {
+    const bool created = xTaskCreatePinnedToCore(taskEntry, config::kPlaybackTaskName,
+                           config::kPlaybackTaskStackSize, this,
+                           config::kPlaybackTaskPriority, nullptr,
+                           config::kPlaybackTaskCore) == pdPASS;
+    if (!created) {
+      Serial.println("[playback] task creation failed");
+    }
+    return created;
+  });
+}
+
+core::ServiceState RecordingPlaybackServer::state() const {
+  return startup_.state();
 }
 
 void RecordingPlaybackServer::taskEntry(void* context) {
@@ -68,7 +78,15 @@ void RecordingPlaybackServer::taskEntry(void* context) {
 
 void RecordingPlaybackServer::run() {
   server_.begin();
+  if (!server_) {
+    startup_.fail();
+    Serial.println("[playback] listener startup failed");
+    server_.end();
+    vTaskDelete(nullptr);
+    return;
+  }
   server_.setNoDelay(true);
+  startup_.ready();
   for (;;) {
     WiFiClient client = server_.available();
     if (!client) {

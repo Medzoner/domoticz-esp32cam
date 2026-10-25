@@ -39,10 +39,12 @@ constexpr std::size_t kVariableCapacity = 32;
 
 HttpControlServer::HttpControlServer(
     ports::CameraPort& camera, MjpegServer& streams,
+    RecordingPlaybackServer& playback,
     ports::RecordingPort& recordings,
     ports::AuthenticationPort& authentication)
     : camera_(camera),
       streams_(streams),
+      playback_(playback),
       recordings_(recordings),
       middleware_(authentication) {}
 
@@ -78,6 +80,8 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
     return ESP_OK;
   }
   const StreamStats stats = self.streams_.stats();
+  const core::ServiceState streamState = self.streams_.state();
+  const core::ServiceState playbackState = self.playback_.state();
   const ports::RecordingStats recording = self.recordings_.stats();
   char peer[16] = "none";
   if (stats.clients > 0) {
@@ -87,9 +91,10 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
              static_cast<unsigned int>(stats.peer[2]),
              static_cast<unsigned int>(stats.peer[3]));
   }
-  char body[928]{};
-  snprintf(body, sizeof(body),
-           "{\"status\":\"ok\",\"uptime_ms\":%lu,"
+  char body[1088]{};
+  const int length = snprintf(body, sizeof(body),
+           "{\"status\":\"%s\",\"stream_service\":\"%s\","
+           "\"playback_service\":\"%s\",\"uptime_ms\":%lu,"
            "\"chip_temperature_c\":%.1f,\"heap_size\":%u,"
            "\"free_heap\":%u,\"psram_size\":%u,\"free_psram\":%u,"
            "\"min_free_heap\":%u,\"max_alloc_heap\":%u,\"rssi\":%d,"
@@ -105,10 +110,13 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
            "\"recording_frames\":%u,\"recording_failures\":%u,"
            "\"recording_bytes\":%llu,\"sd_total_bytes\":%llu,"
            "\"sd_free_bytes\":%llu}",
+           streamState == core::ServiceState::kRunning &&
+                   playbackState == core::ServiceState::kRunning ? "ok" : "degraded",
+           core::serviceStateName(streamState), core::serviceStateName(playbackState),
            millis(), static_cast<double>(temperatureRead()), ESP.getHeapSize(),
            ESP.getFreeHeap(), ESP.getPsramSize(), ESP.getFreePsram(),
            ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), WiFi.RSSI(),
-           stats.started ? "true" : "false",
+            streamState == core::ServiceState::kRunning ? "true" : "false",
            stats.clients > 0 ? "true" : "false", stats.sessions, stats.frames,
            static_cast<unsigned int>(stats.framesPerSecondTimes10 / 10),
            static_cast<unsigned int>(stats.framesPerSecondTimes10 % 10),
@@ -121,7 +129,12 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
            recording.segments, recording.frames, recording.failures,
            static_cast<unsigned long long>(recording.bytes),
            static_cast<unsigned long long>(recording.totalBytes),
-           static_cast<unsigned long long>(recording.freeBytes));
+            static_cast<unsigned long long>(recording.freeBytes));
+  if (length < 0 || static_cast<std::size_t>(length) >= sizeof(body)) {
+    return http::response::error(request,
+                                 http::response::kStatusInternalServerError,
+                                 "health response overflow");
+  }
   return http::response::json(request, body);
 }
 
@@ -241,6 +254,11 @@ esp_err_t HttpControlServer::recordingStartHandler(httpd_req_t* request) {
   HttpControlServer& self = owner(request);
   if (!self.middleware_.handle(request, http::AccessPolicy::kMutation)) {
     return ESP_OK;
+  }
+  if (self.streams_.state() != core::ServiceState::kRunning) {
+    return http::response::error(request,
+                                 http::response::kStatusServiceUnavailable,
+                                 "stream service unavailable");
   }
   if (!self.recordings_.requestStart()) {
     return http::response::error(request,

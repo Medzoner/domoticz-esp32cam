@@ -24,7 +24,7 @@ app::adapters::SdMjpegRecorder recorder;
 app::adapters::WifiStation wifi;
 app::adapters::MjpegServer streams(camera, recorder, authentication);
 app::adapters::RecordingPlaybackServer playback(recorder, authentication);
-app::adapters::HttpControlServer controlServer(camera, streams, recorder,
+app::adapters::HttpControlServer controlServer(camera, streams, playback, recorder,
                                                authentication);
 
 [[noreturn]] void restartAfterFailure(const char* message) {
@@ -80,17 +80,24 @@ void setup() {
                     app::config::kControlPort);
   }
   recorder.begin();
-  playback.begin();
-  streams.begin();
+  if (!playback.begin()) {
+    Serial.println("Playback unavailable; inspect /health after HTTP startup");
+  }
+  const bool streamScheduled = streams.begin();
+  if (!streamScheduled) {
+    Serial.println("Stream unavailable; inspect /health after HTTP startup");
+  }
   if (!controlServer.begin()) {
     restartAfterFailure("HTTP server initialization failed");
   }
 
   Serial.print("Control: http://");
   Serial.println(wifi.ipAddress());
-  Serial.print("Stream: http://");
-  Serial.print(wifi.ipAddress());
-  Serial.printf(":%u/stream\n", app::config::kStreamPort);
+  if (streamScheduled) {
+    Serial.print("Stream endpoint (readiness: /health): http://");
+    Serial.print(wifi.ipAddress());
+    Serial.printf(":%u/stream\n", app::config::kStreamPort);
+  }
   Serial.printf("mDNS: http://%s.local\n", CAMERA_HOSTNAME);
 }
 

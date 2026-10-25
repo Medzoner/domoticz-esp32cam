@@ -15,12 +15,20 @@ MjpegServer::MjpegServer(ports::CameraPort& camera,
       authentication_(authentication),
       server_(config::kStreamPort) {}
 
-void MjpegServer::begin() {
-  xTaskCreatePinnedToCore(taskEntry, config::kStreamTaskName,
-                          config::kStreamTaskStackSize, this,
-                          config::kStreamTaskPriority, &taskHandle_,
-                          config::kStreamTaskCore);
+bool MjpegServer::begin() {
+  return startup_.start([this] {
+    const bool created = xTaskCreatePinnedToCore(taskEntry, config::kStreamTaskName,
+                           config::kStreamTaskStackSize, this,
+                           config::kStreamTaskPriority, nullptr,
+                           config::kStreamTaskCore) == pdPASS;
+    if (!created) {
+      Serial.println("[stream] task creation failed");
+    }
+    return created;
+  });
 }
+
+core::ServiceState MjpegServer::state() const { return startup_.state(); }
 
 void MjpegServer::stopAll() { stopRequested_ = true; }
 
@@ -32,7 +40,7 @@ void MjpegServer::setBaseJpegQuality(uint8_t quality) {
 uint8_t MjpegServer::baseJpegQuality() const { return baseJpegQuality_; }
 
 StreamStats MjpegServer::stats() const {
-  return {started_,
+  return {state() == core::ServiceState::kRunning,
           clientCount_,
           sessionCount_,
           frameCount_,
@@ -51,11 +59,18 @@ void MjpegServer::taskEntry(void* context) {
 
 void MjpegServer::run() {
   server_.begin();
+  if (!server_) {
+    startup_.fail();
+    Serial.println("[stream] listener startup failed");
+    server_.end();
+    vTaskDelete(nullptr);
+    return;
+  }
   server_.setNoDelay(true);
   statsStartedAt_ = millis();
   statsStartedAtFrame_ = frameCount_;
   adaptationStartedAt_ = statsStartedAt_;
-  started_ = true;
+  startup_.ready();
 
   for (;;) {
     recordings_.service();

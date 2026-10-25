@@ -3,6 +3,7 @@
 #include <WiFi.h>
 
 #include "ports/auth/authentication_port.h"
+#include "core/service/service_startup.h"
 #include "ports/recording/recording_port.h"
 
 namespace app::adapters {
@@ -11,7 +12,8 @@ class RecordingPlaybackServer {
  public:
   RecordingPlaybackServer(ports::RecordingPort& recordings,
                           ports::AuthenticationPort& authentication);
-  void begin();
+  [[nodiscard]] bool begin();
+  core::ServiceState state() const;
 
  private:
   static void taskEntry(void* context);
@@ -28,7 +30,7 @@ class RecordingPlaybackServer {
   ports::RecordingPort& recordings_;
   ports::AuthenticationPort& authentication_;
   WiFiServer server_;
-  TaskHandle_t taskHandle_ = nullptr;
+  core::ServiceStartup startup_;
 };
 
 }  // namespace app::adapters

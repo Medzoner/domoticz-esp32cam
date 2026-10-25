@@ -5,6 +5,7 @@
 #include "adapters/http/http_middleware.h"
 #include "adapters/http/http_router.h"
 #include "adapters/stream/mjpeg_server.h"
+#include "adapters/recording/recording_playback_server.h"
 #include "ports/auth/authentication_port.h"
 #include "ports/camera/camera_port.h"
 #include "ports/recording/recording_port.h"
@@ -14,6 +15,7 @@ namespace app::adapters {
 class HttpControlServer {
  public:
   HttpControlServer(ports::CameraPort& camera, MjpegServer& streams,
+                    RecordingPlaybackServer& playback,
                     ports::RecordingPort& recordings,
                     ports::AuthenticationPort& authentication);
   ~HttpControlServer() = default;
@@ -38,6 +40,7 @@ class HttpControlServer {
 
   ports::CameraPort& camera_;
   MjpegServer& streams_;
+  RecordingPlaybackServer& playback_;
   ports::RecordingPort& recordings_;
   http::HttpMiddleware middleware_;
   http::HttpRouter router_;
