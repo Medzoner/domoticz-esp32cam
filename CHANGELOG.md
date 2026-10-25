@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.5...v0.1.6) (2026-10-25)
+
+
+### Bug Fixes
+
+* recover truncated streams and reconnect after network cuts ([#15](https://github.com/Medzoner/domoticz-esp32cam/issues/15)) ([96cb9ae](https://github.com/Medzoner/domoticz-esp32cam/commit/96cb9ae32c83d5875782a9384346b22f426aa497))
+
 ## [0.1.5](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.4...v0.1.5) (2026-10-25)
 
 
