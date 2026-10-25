@@ -1,7 +1,9 @@
 #include "adapters/stream/mjpeg_server.h"
 
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 
+#include "adapters/camera/frame_copy.h"
 #include "core/auth/basic_auth.h"
 #include "core/stream/mjpeg_protocol.h"
 #include "adapters/network/bounded_socket_write.h"
@@ -50,6 +52,8 @@ StreamStats MjpegServer::stats() const {
           targetFps_,
           jpegQualityOffset_,
           pressureLevel_,
+          droppedFrames_,
+          oversizedFrames_,
           IPAddress(peerAddress_)};
 }
 
@@ -58,11 +62,20 @@ void MjpegServer::taskEntry(void* context) {
 }
 
 void MjpegServer::run() {
+  frameBuffer_.reset(static_cast<uint8_t*>(heap_caps_malloc(
+      config::kStreamFrameCapacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
+  if (!frameBuffer_) {
+    startup_.fail();
+    Serial.println("[stream] PSRAM frame buffer allocation failed");
+    vTaskDelete(nullptr);
+    return;
+  }
   server_.begin();
   if (!server_) {
     startup_.fail();
     Serial.println("[stream] listener startup failed");
     server_.end();
+    frameBuffer_.reset();
     vTaskDelete(nullptr);
     return;
   }
@@ -300,16 +313,24 @@ void MjpegServer::applyProfile(const core::StreamProfile& profile) {
 }
 
 void MjpegServer::broadcastFrame() {
-  ports::CameraFrame frame;
-  if (!camera_.acquire(frame)) {
+  std::size_t frameSize = 0;
+  const FrameCopyResult result = copyCameraFrame(
+      camera_, frameBuffer_.get(), config::kStreamFrameCapacity, frameSize);
+  if (result != FrameCopyResult::kCopied) {
+    ++droppedFrames_;
+    if (result == FrameCopyResult::kTooLarge) {
+      ++oversizedFrames_;
+    }
     return;
   }
+  // copyCameraFrame has returned the driver's buffer and unlocked the camera.
+  // The following potentially slow network/storage calls only use our copy.
 
   char partPreamble[config::kPartHeaderCapacity];
   const std::size_t preambleLength = core::mjpeg::formatPartPreamble(
-      partPreamble, sizeof(partPreamble), frame.size);
+      partPreamble, sizeof(partPreamble), frameSize);
   if (preambleLength == 0) {
-    camera_.release(frame);
+    ++droppedFrames_;
     return;
   }
 
@@ -321,15 +342,14 @@ void MjpegServer::broadcastFrame() {
     }
     if (!writeAll(client, reinterpret_cast<const uint8_t*>(partPreamble),
                   preambleLength) ||
-        !writeAll(client, frame.data, frame.size)) {
+        !writeAll(client, frameBuffer_.get(), frameSize)) {
       ++writeFailures_;
       closeClient(index);
     }
   }
   if (recordings_.wantsFrames()) {
-    recordings_.appendFrame(frame.data, frame.size);
+    recordings_.appendFrame(frameBuffer_.get(), frameSize);
   }
-  camera_.release(frame);
   ++frameCount_;
 }
 

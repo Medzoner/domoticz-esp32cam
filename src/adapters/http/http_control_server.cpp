@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include "adapters/http/http_request.h"
+#include "adapters/camera/frame_copy.h"
 #include "adapters/http/http_response.h"
 #include "config/http_config.h"
 #include "config/recording_config.h"
@@ -91,7 +92,7 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
              static_cast<unsigned int>(stats.peer[2]),
              static_cast<unsigned int>(stats.peer[3]));
   }
-  char body[1088]{};
+  char body[1216]{};
   const int length = snprintf(body, sizeof(body),
            "{\"status\":\"%s\",\"stream_service\":\"%s\","
            "\"playback_service\":\"%s\",\"uptime_ms\":%lu,"
@@ -99,7 +100,9 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
            "\"free_heap\":%u,\"psram_size\":%u,\"free_psram\":%u,"
            "\"min_free_heap\":%u,\"max_alloc_heap\":%u,\"rssi\":%d,"
            "\"stream_server\":%s,\"stream_active\":%s,"
-           "\"stream_sessions\":%u,\"stream_frames\":%u,"
+            "\"stream_sessions\":%u,\"stream_frames\":%u,"
+            "\"stream_frame_capacity\":%u,\"stream_dropped_frames\":%u,"
+            "\"stream_oversized_frames\":%u,"
            "\"stream_fps\":%u.%u,\"stream_stack_headroom\":%u,"
            "\"stream_delivery_ms\":%u,\"stream_target_fps\":%u,"
            "\"stream_quality_offset\":%u,\"stream_pressure\":%u,"
@@ -117,7 +120,9 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
            ESP.getFreeHeap(), ESP.getPsramSize(), ESP.getFreePsram(),
            ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), WiFi.RSSI(),
             streamState == core::ServiceState::kRunning ? "true" : "false",
-           stats.clients > 0 ? "true" : "false", stats.sessions, stats.frames,
+            stats.clients > 0 ? "true" : "false", stats.sessions, stats.frames,
+            static_cast<unsigned int>(config::kStreamFrameCapacity),
+            stats.droppedFrames, stats.oversizedFrames,
            static_cast<unsigned int>(stats.framesPerSecondTimes10 / 10),
            static_cast<unsigned int>(stats.framesPerSecondTimes10 % 10),
            stats.stackHeadroomBytes, stats.averageDeliveryMs, stats.targetFps,
@@ -164,30 +169,31 @@ esp_err_t HttpControlServer::captureHandler(httpd_req_t* request) {
   }
   http::response::setSecurityHeaders(request);
 
-  ports::CameraFrame frame;
-  if (!self.camera_.acquire(frame) || frame.data == nullptr || frame.size == 0) {
-    if (frame.data != nullptr) {
-      self.camera_.release(frame);
-    }
+  std::size_t length = 0;
+  uint8_t* copy = nullptr;
+  const FrameCopyResult result = copyCameraFrameUsing(
+      self.camera_, [&](const uint8_t* data, std::size_t size) {
+        copy = static_cast<uint8_t*>(
+            heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (copy == nullptr) {
+          copy = static_cast<uint8_t*>(malloc(size));
+        }
+        if (copy == nullptr) {
+          return FrameCopyResult::kInvalidBuffer;
+        }
+        memcpy(copy, data, size);
+        length = size;
+        return FrameCopyResult::kCopied;
+      });
+  // Every acquired frame has already been returned, including invalid frames
+  // and allocation failures. Sending an error must not retain the camera lock.
+  if (result != FrameCopyResult::kCopied) {
     return http::response::error(request,
                                  http::response::kStatusInternalServerError,
-                                 kMessageCameraUnavailable);
+                                 result == FrameCopyResult::kInvalidBuffer
+                                     ? kMessageOutOfMemory
+                                     : kMessageCameraUnavailable);
   }
-
-  const std::size_t length = frame.size;
-  auto* copy = static_cast<uint8_t*>(
-      heap_caps_malloc(length, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  if (copy == nullptr) {
-    copy = static_cast<uint8_t*>(malloc(length));
-  }
-  if (copy == nullptr) {
-    self.camera_.release(frame);
-    return http::response::error(request,
-                                 http::response::kStatusInternalServerError,
-                                 kMessageOutOfMemory);
-  }
-  memcpy(copy, frame.data, length);
-  self.camera_.release(frame);
 
   httpd_resp_set_type(request, http::response::kJpegContentType);
   httpd_resp_set_hdr(request, kContentDispositionHeader,
