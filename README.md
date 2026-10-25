@@ -113,6 +113,9 @@ recording as unsupported until their storage wiring is defined and validated.
 
 ## Configuration
 
+For the MJR1 format, interrupted-recording behavior and a non-destructive host
+recovery tool, see [recording integrity and recovery](docs/RECORDINGS.md).
+
 Create the local configuration file:
 
 ```bash

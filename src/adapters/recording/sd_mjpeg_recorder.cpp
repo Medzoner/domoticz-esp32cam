@@ -8,6 +8,7 @@
 
 #include "config/recording_config.h"
 #include "core/recording/recording_rules.h"
+#include "core/recording/recording_writer.h"
 
 namespace app::adapters {
 namespace {
@@ -139,13 +140,8 @@ bool SdMjpegRecorder::appendFrame(const uint8_t* data, std::size_t size) {
       return false;
     }
   }
-  const uint32_t frameSize = static_cast<uint32_t>(size);
-  const uint8_t header[kFrameHeaderBytes] = {
-      static_cast<uint8_t>(frameSize), static_cast<uint8_t>(frameSize >> 8),
-      static_cast<uint8_t>(frameSize >> 16),
-      static_cast<uint8_t>(frameSize >> 24)};
-  if (file_.write(header, sizeof(header)) != sizeof(header) ||
-      file_.write(data, size) != size) {
+  if (!core::recording::writeFrame(data, size, config::kMaximumRecordedFrameBytes,
+      [this](const uint8_t* bytes, std::size_t count) { return file_.write(bytes, count); })) {
     ++failureCount_;
     closeSegment();
     return false;

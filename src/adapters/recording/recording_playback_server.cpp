@@ -9,6 +9,7 @@
 #include "config/stream_config.h"
 #include "core/auth/basic_auth.h"
 #include "core/recording/recording_rules.h"
+#include "core/recording/recording_reader.h"
 #include "core/stream/mjpeg_protocol.h"
 #include "adapters/network/bounded_socket_write.h"
 
@@ -127,7 +128,8 @@ bool RecordingPlaybackServer::play(WiFiClient& client, uint32_t index) {
     return false;
   }
   uint8_t magic[sizeof(core::recording::kFileMagic)]{};
-  if (!readExact(magic, sizeof(magic)) ||
+  const uint64_t fileSize = recordings_.readerSize();
+  if (fileSize < sizeof(magic) || !readExact(magic, sizeof(magic)) ||
       std::memcmp(magic, core::recording::kFileMagic, sizeof(magic)) != 0) {
     writeAll(client, reinterpret_cast<const uint8_t*>(kNotFoundResponse),
              sizeof(kNotFoundResponse) - 1);
@@ -139,19 +141,19 @@ bool RecordingPlaybackServer::play(WiFiClient& client, uint32_t index) {
   }
 
   uint8_t buffer[config::kRecordingReadBlockSize];
+  uint64_t remainingFile = fileSize - sizeof(magic);
   while (client.connected()) {
-    uint8_t frameHeader[sizeof(uint32_t)]{};
-    if (!readExact(frameHeader, sizeof(frameHeader))) {
-      break;
+    const auto frame = core::recording::nextFrame(
+        remainingFile, config::kMaximumRecordedFrameBytes,
+        [this](uint8_t* data, std::size_t size) { return recordings_.read(data, size); });
+    if (frame.status == core::recording::FrameReadStatus::kEnd) {
+      return true;
     }
-    const uint32_t frameSize =
-        static_cast<uint32_t>(frameHeader[0]) |
-        (static_cast<uint32_t>(frameHeader[1]) << 8) |
-        (static_cast<uint32_t>(frameHeader[2]) << 16) |
-        (static_cast<uint32_t>(frameHeader[3]) << 24);
-    if (frameSize == 0 || frameSize > config::kMaximumRecordedFrameBytes) {
+    if (frame.status != core::recording::FrameReadStatus::kFrame) {
+      Serial.println("[playback] incomplete, invalid or unreadable frame; stopping");
       return false;
     }
+    const uint32_t frameSize = frame.size;
 
     char preamble[config::kPartHeaderCapacity]{};
     const std::size_t preambleLength = core::mjpeg::formatPartPreamble(
@@ -167,11 +169,11 @@ bool RecordingPlaybackServer::play(WiFiClient& client, uint32_t index) {
     while (remaining > 0) {
       const std::size_t block =
           min(remaining, static_cast<std::size_t>(sizeof(buffer)));
-      const std::size_t read = recordings_.read(buffer, block);
-      if (read != block || !writeAll(client, buffer, read)) {
+      if (!readExact(buffer, block) || !writeAll(client, buffer, block)) {
+        Serial.println("[playback] frame read or delivery failed");
         return false;
       }
-      remaining -= read;
+      remaining -= block;
     }
     const uint32_t elapsed = millis() - startedAt;
     if (elapsed < config::kPlaybackFrameIntervalMs) {
@@ -188,26 +190,31 @@ bool RecordingPlaybackServer::download(WiFiClient& client, uint32_t index) {
     return false;
   }
   char header[256]{};
+  uint64_t remaining = recordings_.readerSize();
   const int length = snprintf(
       header, sizeof(header),
       "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n"
       "Content-Disposition: attachment; filename=recording-%05u.mjr\r\n"
       "Content-Length: %llu\r\nConnection: close\r\n\r\n",
       static_cast<unsigned int>(index),
-      static_cast<unsigned long long>(recordings_.readerSize()));
+      static_cast<unsigned long long>(remaining));
   if (length <= 0 || static_cast<std::size_t>(length) >= sizeof(header) ||
       !writeAll(client, reinterpret_cast<const uint8_t*>(header), length)) {
     return false;
   }
   uint8_t buffer[config::kRecordingReadBlockSize];
-  for (;;) {
-    const std::size_t read = recordings_.read(buffer, sizeof(buffer));
-    if (read == 0) {
-      break;
-    }
-    if (!writeAll(client, buffer, read)) {
+  while (remaining > 0) {
+    const std::size_t block = remaining < sizeof(buffer)
+                                  ? static_cast<std::size_t>(remaining)
+                                  : sizeof(buffer);
+    if (!readExact(buffer, block)) {
+      Serial.println("[download] SD read failed before Content-Length was reached");
       return false;
     }
+    if (!writeAll(client, buffer, block)) {
+      return false;
+    }
+    remaining -= block;
   }
   return true;
 }
@@ -292,16 +299,8 @@ bool RecordingPlaybackServer::writeAll(WiFiClient& client,
 
 bool RecordingPlaybackServer::readExact(uint8_t* destination,
                                         std::size_t length) {
-  std::size_t offset = 0;
-  while (offset < length) {
-    const std::size_t read = recordings_.read(destination + offset,
-                                              length - offset);
-    if (read == 0) {
-      return false;
-    }
-    offset += read;
-  }
-  return true;
+  return core::recording::readExact(destination, length,
+      [this](uint8_t* data, std::size_t size) { return recordings_.read(data, size); });
 }
 
 }  // namespace app::adapters

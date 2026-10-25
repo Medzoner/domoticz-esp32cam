@@ -53,6 +53,7 @@ Before opening a pull request, run the same essential checks as CI:
 ```bash
 pio test --environment native
 pio test --environment native-sanitized
+python -m unittest discover -s test/python -v
 pio check --environment native
 pio check --environment esp32cam
 for environment in esp32cam esp-eye esp32s3-cam-lcd m5stack-camera; do

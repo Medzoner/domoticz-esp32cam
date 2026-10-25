@@ -57,6 +57,9 @@ jobs:
       - name: Run native unit tests
         run: pio test --environment native
 
+      - name: Test offline recording recovery
+        run: python -m unittest discover -s test/python -v
+
       - name: Run native tests with memory and undefined-behavior sanitizers
         run: pio test --environment native-sanitized
 
