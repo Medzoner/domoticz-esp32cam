@@ -2,6 +2,8 @@
 
 #include <WiFi.h>
 
+#include <atomic>
+
 #include "config/camera_config.h"
 #include "config/stream_config.h"
 #include "core/stream/stream_adaptation.h"
@@ -56,19 +58,21 @@ class MjpegServer {
   ports::AuthenticationPort& authentication_;
   WiFiServer server_;
   WiFiClient clients_[config::kMaxStreamClients];
-  volatile bool started_ = false;
-  volatile bool stopRequested_ = false;
-  volatile uint8_t clientCount_ = 0;
-  volatile uint32_t sessionCount_ = 0;
-  volatile uint32_t frameCount_ = 0;
-  volatile uint16_t framesPerSecondTimes10_ = 0;
-  volatile uint32_t stackHeadroomBytes_ = 0;
-  volatile uint16_t averageDeliveryMs_ = 0;
-  volatile uint8_t targetFps_ = config::kTargetStreamFps;
-  volatile uint8_t jpegQualityOffset_ = 0;
-  volatile uint8_t pressureLevel_ = 0;
-  volatile uint8_t baseJpegQuality_ = config::kDefaultJpegQuality;
-  volatile uint32_t peerAddress_ = 0;
+  // Accessed by both the HTTP task and stream task. Volatile is not C++
+  // synchronization. Individual counters are safe, not a transactional snapshot.
+  std::atomic<bool> started_{false};
+  std::atomic<bool> stopRequested_{false};
+  std::atomic<uint8_t> clientCount_{0};
+  std::atomic<uint32_t> sessionCount_{0};
+  std::atomic<uint32_t> frameCount_{0};
+  std::atomic<uint16_t> framesPerSecondTimes10_{0};
+  std::atomic<uint32_t> stackHeadroomBytes_{0};
+  std::atomic<uint16_t> averageDeliveryMs_{0};
+  std::atomic<uint8_t> targetFps_{config::kTargetStreamFps};
+  std::atomic<uint8_t> jpegQualityOffset_{0};
+  std::atomic<uint8_t> pressureLevel_{0};
+  std::atomic<uint8_t> baseJpegQuality_{config::kDefaultJpegQuality};
+  std::atomic<uint32_t> peerAddress_{0};
   TaskHandle_t taskHandle_ = nullptr;
   core::AdaptiveStreamController adaptiveController_;
   uint32_t statsStartedAt_ = 0;
@@ -77,7 +81,7 @@ class MjpegServer {
   uint32_t deliveryDurationTotalMs_ = 0;
   uint16_t deliverySamples_ = 0;
   uint16_t writeFailures_ = 0;
-  volatile uint8_t appliedJpegQuality_ = config::kDefaultJpegQuality;
+  std::atomic<uint8_t> appliedJpegQuality_{config::kDefaultJpegQuality};
 };
 
 }  // namespace app::adapters

@@ -11,6 +11,10 @@ consumers such as MotionEye, Home Assistant, and OctoPrint.
 
 ## Features
 
+For reliability boundaries, sanitizer checks and reproducible hardware stress
+tests, see the [reliability contract](docs/RELIABILITY.md). Build support does
+not imply hardware validation or certification by Espressif.
+
 - Up to four simultaneous MJPEG clients
 - Fixed-rate 10 FPS stream to limit CPU and network usage
 - Runtime camera controls for resolution, JPEG quality, brightness, contrast,
