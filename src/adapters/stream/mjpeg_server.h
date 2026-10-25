@@ -7,6 +7,7 @@
 #include "config/camera_config.h"
 #include "config/stream_config.h"
 #include "core/stream/stream_adaptation.h"
+#include "core/service/service_startup.h"
 #include "ports/auth/authentication_port.h"
 #include "ports/camera/camera_port.h"
 #include "ports/recording/recording_port.h"
@@ -31,7 +32,8 @@ class MjpegServer {
  public:
   MjpegServer(ports::CameraPort& camera, ports::RecordingPort& recordings,
               ports::AuthenticationPort& authentication);
-  void begin();
+  [[nodiscard]] bool begin();
+  core::ServiceState state() const;
   void stopAll();
   void setBaseJpegQuality(uint8_t quality);
   uint8_t baseJpegQuality() const;
@@ -60,7 +62,7 @@ class MjpegServer {
   WiFiClient clients_[config::kMaxStreamClients];
   // Accessed by both the HTTP task and stream task. Volatile is not C++
   // synchronization. Individual counters are safe, not a transactional snapshot.
-  std::atomic<bool> started_{false};
+  core::ServiceStartup startup_;
   std::atomic<bool> stopRequested_{false};
   std::atomic<uint8_t> clientCount_{0};
   std::atomic<uint32_t> sessionCount_{0};
@@ -73,7 +75,6 @@ class MjpegServer {
   std::atomic<uint8_t> pressureLevel_{0};
   std::atomic<uint8_t> baseJpegQuality_{config::kDefaultJpegQuality};
   std::atomic<uint32_t> peerAddress_{0};
-  TaskHandle_t taskHandle_ = nullptr;
   core::AdaptiveStreamController adaptiveController_;
   uint32_t statsStartedAt_ = 0;
   uint32_t statsStartedAtFrame_ = 0;

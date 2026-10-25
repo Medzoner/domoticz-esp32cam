@@ -210,6 +210,13 @@ Recorded-file playback and download use a separate server on port 82. Keeping
 this work away from the control server means a long playback cannot block
 health checks or camera commands.
 
+`/health` includes `stream_service` and `playback_service` startup states
+(`not_started`, `starting`, `running`, `failed`). Its `status` is `ok` only when
+both services are running, otherwise `degraded`. The diagnostic endpoint remains
+HTTP 200; readiness monitors must inspect the JSON status. Failed video/playback
+startup leaves HTTP controls available for diagnosis rather than rebooting the
+device repeatedly. Recording start returns HTTP 503 if video is not running.
+
 ## SD Recording
 
 Use the **SD recordings** panel in the web interface, or call the start and stop

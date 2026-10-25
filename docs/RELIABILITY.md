@@ -24,6 +24,18 @@ driver, power integrity, or FreeRTOS scheduling.
   C++ atomics, not `volatile`. Individual fields are synchronized; a health
   response is not an atomic snapshot of all counters. Stop requests are consumed
   with an atomic exchange so a concurrent new request is not cleared afterward.
+- Live and playback services expose `not_started`, `starting`, `running` or
+  `failed`. Task allocation success means scheduled, not ready; readiness is
+  published only after `WiFiServer` reports a listening socket. Failed socket
+  startup closes the listener and deletes that task. Repeated starts do not
+  create duplicate tasks; failure is sticky until reboot.
+- A live/playback startup failure does not trigger a reboot loop. HTTP controls
+  still start (if their own allocation succeeds), and `/health` reports
+  `status: "degraded"` with `stream_service` and `playback_service` states.
+  For compatibility, `/health` remains HTTP 200 when diagnostic JSON is available;
+  monitors must check `status` for readiness, not just the HTTP code. HTTP
+  availability is not camera/video readiness. Recording start returns HTTP 503
+  until the stream task is running, since that task services the recorder.
 - Request-line/header byte limits and read timeouts protect admission, but
   admission itself currently runs in the stream task and can delay video.
 - Authentication is optional and HTTP is unencrypted. Use an isolated trusted
@@ -45,6 +57,15 @@ ESP32. Transport tests inject a clock and a nonblocking sender to cover partial
 writes, stalled readers, disconnects, timeout despite progress, late final
 writes, rollover and invalid input. These are deterministic unit tests, not
 claims about throughput or radio reliability.
+
+Service-startup tests inject task-creation success/failure and early worker
+execution, check idempotence and sticky failure, and distinguish allocation
+success from readiness. They do not allocate FreeRTOS tasks. Verify the adapter
+failure paths on hardware by using a disposable test build that forces each
+`xTaskCreatePinnedToCore` failure separately, then forces each listener startup
+failure. Confirm `/health` reports degradation, `/recording/start` is rejected when
+the stream service failed, and controls remain responsive. Reboot with the
+normal build afterward. Also verify normal boot reports both services running.
 
 ## Hardware acceptance protocol
 
@@ -86,7 +107,7 @@ performance benchmark.
 
 Before describing a release as a community reference validated on hardware,
 collect the matrix above. Further work should prioritize auditing shared state
-in the other adapters, task-start failure reporting, camera-lock occupancy, SD blocking
+in the other adapters, camera-lock occupancy, SD blocking
 and interrupted-recording recovery, malformed-input fuzzing, and repeatable
 hardware-in-the-loop fault injection. Track these as separate, reviewable
 changes rather than claiming this document or a single patch solves them.
