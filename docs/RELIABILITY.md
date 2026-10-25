@@ -85,7 +85,7 @@ pio test -e native
 pio test -e native-sanitized
 pio test -e native-storage -e native-storage-sanitized
 python -m unittest discover -s test/python -v
-node --test test/web/recording_health.test.cjs
+node --test test/web/*.test.cjs
 pio check -e native
 pio check -e esp32cam
 pio run -e esp32cam -e esp-eye -e esp32s3-cam-lcd -e m5stack-camera
@@ -117,6 +117,48 @@ the stream service failed, and controls remain responsive. Reboot with the
 normal build afterward. Also verify normal boot reports both services running.
 
 ## Hardware acceptance protocol
+
+### Browser network recovery
+
+Firefox can report `load` for each MJPEG part, including a partially decoded
+terminal part, without reporting `error` when that stream closes. The dashboard
+therefore does not rely solely on `image.onerror`:
+
+- Health polling uses an AbortController with a 4-second budget covering fetch
+  and JSON body consumption. The in-flight guard is always released on failure.
+- Failed health probes hide a wanted stream's possibly incomplete image and
+  queue a retry. A successful probe after failure can refresh that session.
+- First-frame timeout is 10 seconds; after per-frame load activity has been
+  observed, a 10-second stale-frame watchdog also triggers recovery (up to one
+  extra second for watchdog sampling, plus event-loop scheduling latency).
+- Browsers that only report one load per stream are not repeatedly disconnected
+  just because they lack per-frame events. They rely on health/network signals,
+  readiness/reboot changes and a zero-client check after admission grace. This
+  cannot identify every dead individual session while other clients remain
+  active; native MJPEG does not expose a universal per-frame liveness API.
+- Retry callbacks coalesce, back off from 1 to 10 seconds, pause while offline
+  or hidden, and reset on demonstrated multi-frame activity or network recovery.
+  Stop/still/playback cancel live intent and timers. A server-side stop is not a
+  revocation of a client's local intent; an explicitly wanted dashboard stream
+  may reconnect after a server disconnect.
+- Each attempt uses a fresh image node with generation-bound handlers. Late
+  callbacks from a removed image cannot mark a new connection as alive, tear it
+  down or hide a later still capture. The previous source is cancelled before
+  its attributes are cloned, avoiding an extra request for the old URL.
+
+This is detection and recovery, not atomic JPEG presentation: the browser may
+briefly display an incomplete frame before a failure/stall is detected. Direct
+MJPEG links and third-party clients need their own reconnection logic. No image
+content is inspected or persisted by the watchdog.
+
+Unit tests use a fake clock/DOM/fetch to exercise these transitions, aborts and
+timer cleanup. Browser fault injection should serve synthetic JPEGs, cut a TCP
+response mid-payload, then serve healthy frames on reconnect; test both that
+Firefox emits no error and that the dashboard nonetheless recovers. Do not cut
+the user's real AP or persist private frames to run this test. Distinguish mock
+network interruption from physical Wi-Fi recovery evidence.
+
+### Board scenarios
 
 Use a dedicated test network and synthetic/non-sensitive scene. For every
 result, record the commit, board revision, sensor, PSRAM, power supply, SD model,

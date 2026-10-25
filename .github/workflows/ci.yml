@@ -61,7 +61,7 @@ jobs:
         run: python -m unittest discover -s test/python -v
 
       - name: Test recording health UI behavior
-        run: node --test test/web/recording_health.test.cjs
+        run: node --test test/web/*.test.cjs
 
       - name: Run native tests with memory and undefined-behavior sanitizers
         run: pio test --environment native-sanitized

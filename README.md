@@ -85,6 +85,16 @@ reconnects with exponential backoff after a stream interruption. It disconnects
 its own stream while the page is hidden, which avoids wasting Wi-Fi bandwidth,
 browser decoding time, and ESP32 processing capacity in background tabs.
 
+The dashboard also watches frame-load activity when the browser reports it
+(notably Firefox): after about 10 seconds without a new frame, it masks the stale
+image and reconnects, even if a truncated MJPEG connection never emitted an
+`error`. Health requests time out after 4 seconds; failed probes, camera reboot
+and browser offline/online signals also trigger recovery of a wanted stream.
+Retries back off from 1 to 10 seconds. Stop, still capture and playback cancel
+that live-stream intent, so recovery must not restart video the user stopped.
+The raw `/stream` link has no dashboard JavaScript: direct clients must reconnect
+themselves after a broken TCP connection.
+
 The default 10 FPS cap favors stable multi-client delivery over maximum frame
 rate. JPEG quality has the greatest effect on bandwidth; increase the numeric
 quality value when more simultaneous clients or a weaker Wi-Fi signal require

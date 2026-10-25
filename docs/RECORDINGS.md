@@ -124,7 +124,7 @@ for physical SD fault-injection and soak-test requirements.
 pio test -e native -e native-sanitized
 pio test -e native-storage -e native-storage-sanitized
 python -m unittest discover -s test/python -v
-node --test test/web/recording_health.test.cjs
+node --test test/web/*.test.cjs
 ```
 
 Native tests exercise positive short reads, EOF vs truncation/read failure,

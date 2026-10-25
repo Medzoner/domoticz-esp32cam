@@ -33,6 +33,9 @@ function harness(state) {
     },
     location: {hostname: 'camera.test', origin: 'http://camera.test'},
     document: {hidden: true, addEventListener() {}, createElement: element},
+    window: {addEventListener() {}},
+    AbortController,
+    performance,
     fetch: async path => {
       calls.push(path);
       if (path === '/health' && healthFailure === 'fetch') throw new Error('network unavailable');
