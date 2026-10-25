@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.1...v0.1.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* bound socket writes and synchronize stream state ([#6](https://github.com/Medzoner/domoticz-esp32cam/issues/6)) ([937fe12](https://github.com/Medzoner/domoticz-esp32cam/commit/937fe12b9ffb4119c318325404a0838771eefb84))
+
 ## [0.1.1](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.0...v0.1.1) (2026-10-24)
 
 
