@@ -63,6 +63,7 @@ driver, power integrity, or FreeRTOS scheduling.
 ```sh
 pio test -e native
 pio test -e native-sanitized
+python -m unittest discover -s test/python -v
 pio check -e native
 pio check -e esp32cam
 pio run -e esp32cam -e esp-eye -e esp32s3-cam-lcd -e m5stack-camera
@@ -126,6 +127,11 @@ warm-up; a one-off heap delta is not evidence of a leak.
 Do not remove a mounted SD card or cut power during writes on valuable media.
 Use disposable cards and expect the last segment/filesystem to need recovery:
 the recorder is not a power-loss-safe filesystem.
+
+See [MJR1 integrity and recovery](RECORDINGS.md) for the on-disk layout,
+truncated-tail playback behavior and non-destructive host recovery. Known short
+SD writes stop the segment; successful writes and flush calls still do not
+guarantee durability. Host/native tests cannot substitute for physical SD tests.
 
 ## Evidence levels and remaining priorities
 
