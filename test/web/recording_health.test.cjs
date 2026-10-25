@@ -7,6 +7,14 @@ const vm = require('node:vm');
 const script = readFileSync(resolve(__dirname, '../../web/index.js'), 'utf8');
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
+test('resolution labels use the pinned camera SDK frame-size values', () => {
+  const html = readFileSync(resolve(__dirname, '../../web/index.html'), 'utf8');
+  for (const [id, label] of [[8, 'VGA · 640×480'], [9, 'SVGA · 800×600'],
+    [10, 'XGA · 1024×768'], [12, 'SXGA · 1280×1024'], [13, 'UXGA · 1600×1200']]) {
+    assert.ok(html.includes(`<option value="${id}">${label}</option>`));
+  }
+});
+
 function harness(state) {
   const elements = new Map();
   const calls = [];
@@ -25,6 +33,9 @@ function harness(state) {
     },
     location: {hostname: 'camera.test', origin: 'http://camera.test'},
     document: {hidden: true, addEventListener() {}, createElement: element},
+    window: {addEventListener() {}},
+    AbortController,
+    performance,
     fetch: async path => {
       calls.push(path);
       if (path === '/health' && healthFailure === 'fetch') throw new Error('network unavailable');

@@ -92,7 +92,7 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
              static_cast<unsigned int>(stats.peer[2]),
              static_cast<unsigned int>(stats.peer[3]));
   }
-  char body[1280]{};
+  char body[1344]{};
   const int length = snprintf(body, sizeof(body),
            "{\"status\":\"%s\",\"stream_service\":\"%s\","
            "\"playback_service\":\"%s\",\"uptime_ms\":%lu,"
@@ -103,6 +103,7 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
             "\"stream_sessions\":%u,\"stream_frames\":%u,"
             "\"stream_frame_capacity\":%u,\"stream_dropped_frames\":%u,"
             "\"stream_oversized_frames\":%u,"
+            "\"stream_write_failures\":%u,"
            "\"stream_fps\":%u.%u,\"stream_stack_headroom\":%u,"
            "\"stream_delivery_ms\":%u,\"stream_target_fps\":%u,"
            "\"stream_quality_offset\":%u,\"stream_pressure\":%u,"
@@ -125,6 +126,7 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
             stats.clients > 0 ? "true" : "false", stats.sessions, stats.frames,
             static_cast<unsigned int>(config::kStreamFrameCapacity),
             stats.droppedFrames, stats.oversizedFrames,
+            stats.writeFailures,
            static_cast<unsigned int>(stats.framesPerSecondTimes10 / 10),
            static_cast<unsigned int>(stats.framesPerSecondTimes10 % 10),
            stats.stackHeadroomBytes, stats.averageDeliveryMs, stats.targetFps,

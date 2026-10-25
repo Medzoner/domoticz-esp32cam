@@ -10,13 +10,21 @@ driver, power integrity, or FreeRTOS scheduling.
 - At most four live MJPEG sessions; a fifth receives an unavailable response.
 - One captured JPEG is broadcast sequentially. Slow clients can delay subsequent
   clients; this is not independent per-client scheduling.
-- Live and playback payload writes use `send(..., MSG_DONTWAIT)` with one elapsed
-  time budget per `writeAll` call. Partial progress does not reset that budget;
-  retryable errors yield a FreeRTOS tick. Expiry or a fatal error closes the
-  session. Deadline arithmetic handles the 32-bit `millis()` rollover.
+- Live and playback writes use `send(..., MSG_DONTWAIT)`. Live JPEG payloads have
+  a 2 s absolute budget plus a 300 ms no-progress deadline. Only positive writes
+  refresh the idle deadline; neither progress nor retries extend the absolute
+  budget. Retryable errors yield a FreeRTOS tick. Expiry or fatal error closes
+  the session. Both clocks handle the 32-bit `millis()` rollover. Other writes
+  retain 300 ms total budgets (including headers and each playback/download block).
 - A live frame has separate preamble and payload writes per client; playback
   and download have a separate budget for each block. There is no whole-file
   deadline and no hard real-time guarantee: scheduling adds latency.
+  Four progressing slow live clients can consume up to 8 s of payload budgets
+  in one sequential cycle, plus headers/capture/SD/scheduling. A completely stuck
+  write still expires at the idle deadline. This explicit trade-off avoids
+  prematurely truncating a large progressing JPEG, not all possible truncation.
+  `stream_write_failures` counts failed live frame writes, including client
+  disconnects; it is not a timeout-only or camera-corruption counter.
 - The stream task reserves a single 512 KiB PSRAM-only delivery buffer before
   opening its listener. Reservation failure marks startup failed and deletes the
   task; HTTP diagnostics remain available. There is no DRAM fallback. On listener
@@ -26,6 +34,18 @@ driver, power integrity, or FreeRTOS scheduling.
   is released exactly once before network or SD delivery, including rejection
   paths. The copy remains valid even when the driver immediately reuses its
   frame. This bounds copy memory, not the duration of camera capture or memcpy.
+- Driver buffer allocation uses UXGA with PSRAM, followed by VGA/default quality
+  for normal startup, as in Espressif's Arduino CameraWebServer example. Runtime
+  frame-size controls cannot exceed the resolution used for driver allocation.
+  The driver therefore reserves more PSRAM than the old VGA initialization; the
+  separate 512 KiB delivery copy remains unchanged. Startup can fail if memory
+  is insufficient; actual board memory must be checked after flashing.
+- Camera frames without JPEG SOI/EOI markers (or with non-JPEG format) are
+  returned to the driver and rejected, never streamed/recorded as complete
+  captures. The normal stream drop counter includes those acquisition failures.
+  These inexpensive guards do not validate JPEG entropy data, dimensions or
+  prove that an otherwise complete JPEG has no visual artifact. A network
+  disconnect can still interrupt a frame already being delivered.
 - Oversized JPEGs are dropped whole rather than truncated or used to grow the
   buffer. `/health` exposes the configured `stream_frame_capacity`, total
   `stream_dropped_frames` (acquisition, validation or formatting failure), and
@@ -65,7 +85,7 @@ pio test -e native
 pio test -e native-sanitized
 pio test -e native-storage -e native-storage-sanitized
 python -m unittest discover -s test/python -v
-node --test test/web/recording_health.test.cjs
+node --test test/web/*.test.cjs
 pio check -e native
 pio check -e esp32cam
 pio run -e esp32cam -e esp-eye -e esp32s3-cam-lcd -e m5stack-camera
@@ -98,6 +118,48 @@ normal build afterward. Also verify normal boot reports both services running.
 
 ## Hardware acceptance protocol
 
+### Browser network recovery
+
+Firefox can report `load` for each MJPEG part, including a partially decoded
+terminal part, without reporting `error` when that stream closes. The dashboard
+therefore does not rely solely on `image.onerror`:
+
+- Health polling uses an AbortController with a 4-second budget covering fetch
+  and JSON body consumption. The in-flight guard is always released on failure.
+- Failed health probes hide a wanted stream's possibly incomplete image and
+  queue a retry. A successful probe after failure can refresh that session.
+- First-frame timeout is 10 seconds; after per-frame load activity has been
+  observed, a 10-second stale-frame watchdog also triggers recovery (up to one
+  extra second for watchdog sampling, plus event-loop scheduling latency).
+- Browsers that only report one load per stream are not repeatedly disconnected
+  just because they lack per-frame events. They rely on health/network signals,
+  readiness/reboot changes and a zero-client check after admission grace. This
+  cannot identify every dead individual session while other clients remain
+  active; native MJPEG does not expose a universal per-frame liveness API.
+- Retry callbacks coalesce, back off from 1 to 10 seconds, pause while offline
+  or hidden, and reset on demonstrated multi-frame activity or network recovery.
+  Stop/still/playback cancel live intent and timers. A server-side stop is not a
+  revocation of a client's local intent; an explicitly wanted dashboard stream
+  may reconnect after a server disconnect.
+- Each attempt uses a fresh image node with generation-bound handlers. Late
+  callbacks from a removed image cannot mark a new connection as alive, tear it
+  down or hide a later still capture. The previous source is cancelled before
+  its attributes are cloned, avoiding an extra request for the old URL.
+
+This is detection and recovery, not atomic JPEG presentation: the browser may
+briefly display an incomplete frame before a failure/stall is detected. Direct
+MJPEG links and third-party clients need their own reconnection logic. No image
+content is inspected or persisted by the watchdog.
+
+Unit tests use a fake clock/DOM/fetch to exercise these transitions, aborts and
+timer cleanup. Browser fault injection should serve synthetic JPEGs, cut a TCP
+response mid-payload, then serve healthy frames on reconnect; test both that
+Firefox emits no error and that the dashboard nonetheless recovers. Do not cut
+the user's real AP or persist private frames to run this test. Distinguish mock
+network interruption from physical Wi-Fi recovery evidence.
+
+### Board scenarios
+
 Use a dedicated test network and synthetic/non-sensitive scene. For every
 result, record the commit, board revision, sensor, PSRAM, power supply, SD model,
 SDK/tool versions, resolution/quality, client versions and scenario duration.
@@ -122,6 +184,7 @@ warm-up; a one-off heap delta is not evidence of a leak.
 | Camera contention | With a stalled live reader and SD load, request camera controls and snapshots repeatedly | Capture lease released before delivery; measure actual control/snapshot latency and verify recovery without claiming a hard bound |
 | Copy capacity | In a disposable test build reduce the frame cap below JPEG size, then restore it | Oversized and dropped counters rise; no partial JPEG is emitted or recorded; controls work; normal build resumes delivery |
 | Copy allocation | In a disposable build force the PSRAM reservation to fail | Stream reports failed; no live listener; HTTP diagnosis works; no DRAM fallback or reboot loop |
+| Resolution changes | Switch between VGA, XGA and UXGA, including detailed scenes; inspect JPEG structure/dimensions and free PSRAM without publishing private images | Driver and delivery buffers remain available; incomplete captures are rejected; no visual/durability guarantee inferred from SOI/EOI alone |
 | SD full/failure | Fill a disposable test card; separately test missing/bad media | Explicit failure; existing files not silently deleted; controls usable |
 | Soak | At least 24 hours with periodic connects/disconnects and health samples | No unexplained reset, deadlock, progressive heap loss or exhausted client slots |
 | Rollover | Exercise a test firmware clock near wrap or run beyond 49.7 days | No indefinite socket wait or broken interval scheduling |

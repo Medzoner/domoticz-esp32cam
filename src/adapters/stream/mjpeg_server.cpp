@@ -54,6 +54,7 @@ StreamStats MjpegServer::stats() const {
           pressureLevel_,
           droppedFrames_,
           oversizedFrames_,
+          writeFailureCount_,
           IPAddress(peerAddress_)};
 }
 
@@ -167,9 +168,9 @@ void MjpegServer::closeClient(std::size_t index) {
 }
 
 bool MjpegServer::writeAll(WiFiClient& client, const uint8_t* data,
-                           std::size_t length) {
+                            std::size_t length, uint32_t timeoutMs) {
   return boundedSocketWrite(client, data, length, config::kStreamWriteBlockSize,
-                            config::kClientWriteTimeoutMs);
+                            timeoutMs, config::kClientWriteTimeoutMs);
 }
 
 bool MjpegServer::readRequestLine(WiFiClient& client, char* destination,
@@ -342,8 +343,10 @@ void MjpegServer::broadcastFrame() {
     }
     if (!writeAll(client, reinterpret_cast<const uint8_t*>(partPreamble),
                   preambleLength) ||
-        !writeAll(client, frameBuffer_.get(), frameSize)) {
+        !writeAll(client, frameBuffer_.get(), frameSize,
+                  config::kStreamFrameWriteBudgetMs)) {
       ++writeFailures_;
+      ++writeFailureCount_;
       closeClient(index);
     }
   }

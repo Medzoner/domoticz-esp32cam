@@ -29,6 +29,7 @@ struct StreamStats {
   uint8_t pressureLevel;
   uint32_t droppedFrames;
   uint32_t oversizedFrames;
+  uint32_t writeFailures;
   IPAddress peer;
 };
 
@@ -49,7 +50,7 @@ class MjpegServer {
   void acceptClient();
   void closeClient(std::size_t index);
   bool writeAll(WiFiClient& client, const uint8_t* data,
-                std::size_t length);
+                std::size_t length, uint32_t timeoutMs = config::kClientWriteTimeoutMs);
   bool readRequestLine(WiFiClient& client, char* destination,
                        std::size_t capacity);
   bool drainRequestHeaders(WiFiClient& client);
@@ -75,6 +76,7 @@ class MjpegServer {
   std::atomic<uint32_t> frameCount_{0};
   std::atomic<uint32_t> droppedFrames_{0};
   std::atomic<uint32_t> oversizedFrames_{0};
+  std::atomic<uint32_t> writeFailureCount_{0};
   std::atomic<uint16_t> framesPerSecondTimes10_{0};
   std::atomic<uint32_t> stackHeadroomBytes_{0};
   std::atomic<uint16_t> averageDeliveryMs_{0};

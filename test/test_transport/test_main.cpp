@@ -133,6 +133,61 @@ void retriesCanRecoverWithoutDuplicatingBytes() {
   TEST_ASSERT_EQUAL_UINT(6, calls);
   TEST_ASSERT_EQUAL_MEMORY(kData, received, sizeof(kData));
 }
+
+void progressingPayloadCanExceedIdleBudgetWithoutTruncation() {
+  uint32_t now = 0;
+  unsigned calls = 0;
+  TEST_ASSERT_TRUE(app::core::boundedWriteWithIdleTimeout(
+      kData, sizeof(kData), 1, 30, 5, [&] { return now; },
+      [&](const uint8_t*, std::size_t) { ++calls; now += 4; return std::ptrdiff_t{1}; },
+      [] {}));
+  TEST_ASSERT_EQUAL_UINT(6, calls);
+  TEST_ASSERT_EQUAL_UINT32(24, now);
+}
+
+void stalledPayloadStopsAtIdleDeadlineBeforeTotalBudget() {
+  uint32_t now = 0;
+  TEST_ASSERT_FALSE(app::core::boundedWriteWithIdleTimeout(
+      kData, sizeof(kData), 1, 30, 5, [&] { return now; },
+      [](const uint8_t*, std::size_t) { return std::ptrdiff_t{0}; }, [&] { ++now; }));
+  TEST_ASSERT_EQUAL_UINT32(5, now);
+}
+
+void progressNeverResetsTheHardPayloadDeadline() {
+  uint32_t now = 0;
+  unsigned calls = 0;
+  TEST_ASSERT_FALSE(app::core::boundedWriteWithIdleTimeout(
+      kData, sizeof(kData), 1, 10, 5, [&] { return now; },
+      [&](const uint8_t*, std::size_t) { ++calls; now += 4; return std::ptrdiff_t{1}; },
+      [] {}));
+  TEST_ASSERT_EQUAL_UINT(3, calls);
+}
+
+void idleClockSurvivesRolloverAfterSomeProgress() {
+  uint32_t now = UINT32_MAX - 2;
+  unsigned calls = 0;
+  TEST_ASSERT_FALSE(app::core::boundedWriteWithIdleTimeout(
+      kData, sizeof(kData), 1, 30, 5, [&] { return now; },
+      [&](const uint8_t*, std::size_t) { return ++calls == 1 ? std::ptrdiff_t{1} : 0; },
+      [&] { ++now; }));
+  TEST_ASSERT_EQUAL_UINT32(2, now);
+  TEST_ASSERT_FALSE(app::core::boundedWriteWithIdleTimeout(
+      kData, sizeof(kData), 1, 30, 0, [] { return uint32_t{0}; },
+      [](const uint8_t*, std::size_t) { return std::ptrdiff_t{1}; }, [] {}));
+}
+
+void intermittentProgressRefreshesOnlyTheIdleClock() {
+  uint32_t now = 0;
+  unsigned calls = 0;
+  TEST_ASSERT_TRUE(app::core::boundedWriteWithIdleTimeout(
+      kData, sizeof(kData), 1, 30, 5, [&] { return now; },
+      [&](const uint8_t*, std::size_t) {
+        return ++calls % 4 == 0 ? std::ptrdiff_t{1} : std::ptrdiff_t{0};
+      },
+      [&] { ++now; }));
+  TEST_ASSERT_EQUAL_UINT32(18, now);
+  TEST_ASSERT_EQUAL_UINT(24, calls);
+}
 }  // namespace
 
 void setUp() {}
@@ -149,5 +204,10 @@ int main() {
   RUN_TEST(invalidInputsNeverSend);
   RUN_TEST(invalidWriteCountIsRejected);
   RUN_TEST(retriesCanRecoverWithoutDuplicatingBytes);
+  RUN_TEST(progressingPayloadCanExceedIdleBudgetWithoutTruncation);
+  RUN_TEST(stalledPayloadStopsAtIdleDeadlineBeforeTotalBudget);
+  RUN_TEST(progressNeverResetsTheHardPayloadDeadline);
+  RUN_TEST(idleClockSurvivesRolloverAfterSomeProgress);
+  RUN_TEST(intermittentProgressRefreshesOnlyTheIdleClock);
   return UNITY_END();
 }

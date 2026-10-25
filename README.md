@@ -49,6 +49,23 @@ latency. The MJPEG server combines each multipart boundary and JPEG header into
 one TCP write, then sends image data in 16 KiB blocks. This reduces socket calls
 while retaining a bounded timeout for slow consumers.
 
+Live JPEG payloads have a 300 ms no-progress timeout and a 2 s absolute budget.
+This lets a large image finish when bytes are still progressing instead of
+cutting it at the former 300 ms total deadline. HTTP/part headers and playback
+blocks retain their 300 ms total budget. Clients remain sequential: this grace
+can delay later clients and recording; it is not an independent-client scheduler.
+`stream_write_failures` counts cumulative failed live preamble/payload writes,
+including disconnects, separately from rejected camera frames.
+
+With PSRAM, the driver is initialized at UXGA/high JPEG quality to reserve
+buffers for the maximum supported resolution, then the active sensor is reset
+to VGA/default quality. Initializing only at VGA and later requesting larger
+frames can exceed the driver's preallocated capacity. This follows
+[Espressif's CameraWebServer guidance](https://github.com/espressif/arduino-esp32/blob/2.0.17/libraries/ESP32/examples/Camera/CameraWebServer/CameraWebServer.ino).
+Without PSRAM, frame-size controls are capped at the VGA allocation. Obvious
+missing JPEG start/end markers are rejected before returning a camera lease;
+this is not full JPEG decoding or a guarantee against all visual corruption.
+
 The stream task reserves one reusable 512 KiB PSRAM delivery buffer at startup.
 It copies each JPEG, returns the driver's frame and releases the camera mutex
 **before** sending it to clients or recording it to SD. Network and storage
@@ -67,6 +84,16 @@ The browser interface uses asynchronous image decoding and automatically
 reconnects with exponential backoff after a stream interruption. It disconnects
 its own stream while the page is hidden, which avoids wasting Wi-Fi bandwidth,
 browser decoding time, and ESP32 processing capacity in background tabs.
+
+The dashboard also watches frame-load activity when the browser reports it
+(notably Firefox): after about 10 seconds without a new frame, it masks the stale
+image and reconnects, even if a truncated MJPEG connection never emitted an
+`error`. Health requests time out after 4 seconds; failed probes, camera reboot
+and browser offline/online signals also trigger recovery of a wanted stream.
+Retries back off from 1 to 10 seconds. Stop, still capture and playback cancel
+that live-stream intent, so recovery must not restart video the user stopped.
+The raw `/stream` link has no dashboard JavaScript: direct clients must reconnect
+themselves after a broken TCP connection.
 
 The default 10 FPS cap favors stable multi-client delivery over maximum frame
 rate. JPEG quality has the greatest effect on bandwidth; increase the numeric

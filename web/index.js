@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = EspUi.byId;
-const image = $('camera');
+let image = $('camera');
 const placeholder = $('placeholder');
 const playback = $('playback');
 const playbackPlaceholder = $('playbackPlaceholder');
@@ -10,7 +10,19 @@ const playbackBaseUrl = `http://${location.hostname}:82`;
 const snapshotUrl = `${location.origin}/capture`;
 let streamWanted = false;
 let reconnectDelay = 1000;
-let reconnectTimer;
+let reconnectTimer = null;
+let streamWatchdogTimer = null;
+let streamFrameEvents = 0;
+let streamFrameUpdatesObserved = false;
+let streamLastFrameAt = 0;
+let streamConnectedAt = 0;
+let streamGeneration = 0;
+let streamRetryNeeded = false;
+let streamReady = null;
+let healthReachable = null;
+let previousUptime = null;
+const streamStallTimeoutMs = 10000;
+const healthTimeoutMs = 4000;
 let healthLoading = false;
 let recordingsLoaded = false;
 let recordingWasActive = false;
@@ -31,10 +43,88 @@ function hideImage(message = 'Stream stopped') {
   placeholder.hidden = false;
 }
 
+function replaceCameraImage() {
+  const previous = image;
+  previous.removeAttribute('src');
+  // Clone attributes only, after cancelling the old request. A fresh node keeps
+  // late old-request events away from the new request's event handlers.
+  const next = previous.cloneNode(false);
+  previous.replaceWith(next);
+  image = next;
+  return next;
+}
+
+function networkOffline() {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+}
+
+function clearStreamTimers() {
+  clearTimeout(reconnectTimer);
+  clearTimeout(streamWatchdogTimer);
+  reconnectTimer = null;
+  streamWatchdogTimer = null;
+}
+
+function reconnectStream(message = 'Reconnecting…') {
+  if (!streamWanted) return;
+  streamRetryNeeded = true;
+  clearTimeout(streamWatchdogTimer);
+  streamWatchdogTimer = null;
+  hideImage(message);
+  if (document.hidden || networkOffline() || reconnectTimer !== null) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectStream();
+  }, reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+}
+
+function watchStream(generation) {
+  if (!streamWanted || document.hidden || generation !== streamGeneration) return;
+  const now = performance.now();
+  // Firefox reports load per MJPEG frame, even for a truncated final part.
+  // Other browsers may report only the first load: do not periodically tear
+  // down their healthy streams based on an event they never emit again.
+  const noFirstFrame = streamFrameEvents === 0 && now - streamConnectedAt >= streamStallTimeoutMs;
+  const framesStopped = streamFrameUpdatesObserved && streamFrameEvents > 0
+    && now - streamLastFrameAt >= streamStallTimeoutMs;
+  if (noFirstFrame || framesStopped) {
+    reconnectStream('Stream interrupted — reconnecting…');
+    return;
+  }
+  streamWatchdogTimer = setTimeout(() => watchStream(generation), 1000);
+}
+
 function connectStream() {
   if (!streamWanted || document.hidden) return;
-  clearTimeout(reconnectTimer);
-  displayImage(`${streamUrl}?t=${Date.now()}`);
+  clearStreamTimers();
+  if (networkOffline() || streamReady === false) {
+    reconnectStream(networkOffline() ? 'Network unavailable — waiting…' : 'Stream unavailable — retrying…');
+    return;
+  }
+  streamRetryNeeded = false;
+  streamFrameEvents = 0;
+  streamConnectedAt = performance.now();
+  streamLastFrameAt = streamConnectedAt;
+  const generation = ++streamGeneration;
+  const requestImage = replaceCameraImage();
+  const url = `${streamUrl}?t=${Date.now()}&session=${generation}`;
+  const activeRequest = () => streamWanted && generation === streamGeneration
+    && image === requestImage && requestImage.getAttribute('src') === url;
+  requestImage.onerror = () => {
+    if (activeRequest()) reconnectStream();
+  };
+  requestImage.onload = () => {
+    if (!activeRequest()) return;
+    ++streamFrameEvents;
+    streamLastFrameAt = performance.now();
+    if (streamFrameEvents >= 2) {
+      streamFrameUpdatesObserved = true;
+      reconnectDelay = 1000;
+    }
+  };
+  displayImage(url);
+  streamWatchdogTimer = setTimeout(() => watchStream(generation), 1000);
 }
 
 function startStream() {
@@ -45,12 +135,20 @@ function startStream() {
 
 function stopStream() {
   streamWanted = false;
-  clearTimeout(reconnectTimer);
+  streamRetryNeeded = false;
+  ++streamGeneration;
+  clearStreamTimers();
   hideImage();
 }
 
 function showStill() {
   stopStream();
+  const requestImage = replaceCameraImage();
+  const generation = streamGeneration;
+  requestImage.onerror = () => {
+    if (!streamWanted && generation === streamGeneration && image === requestImage
+      && requestImage.getAttribute('src')) hideImage('Image unavailable');
+  };
   displayImage(`/capture?t=${Date.now()}`);
 }
 
@@ -160,10 +258,29 @@ async function loadStatus() {
 async function loadHealth() {
   if (healthLoading) return;
   healthLoading = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), healthTimeoutMs);
   try {
-    const response = await fetch('/health', {cache: 'no-store'});
+    const response = await fetch('/health', {cache: 'no-store', signal: controller.signal});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const state = await response.json();
+    if (networkOffline()) throw new Error('Network offline');
+    const recovered = healthReachable === false;
+    const becameReady = streamReady === false && state.stream_server === true;
+    const rebooted = Number.isFinite(previousUptime) && Number.isFinite(state.uptime_ms)
+      && state.uptime_ms < previousUptime;
+    healthReachable = true;
+    previousUptime = state.uptime_ms;
+    streamReady = state.stream_server !== false;
+    if (streamWanted && !streamReady) {
+      reconnectStream('Stream unavailable — retrying…');
+    } else if (streamWanted && (becameReady || rebooted || (recovered && streamRetryNeeded))) {
+      reconnectDelay = 1000;
+      connectStream();
+    } else if (streamWanted && !streamRetryNeeded && streamFrameEvents > 0
+      && state.stream_clients === 0 && performance.now() - streamConnectedAt >= 2000) {
+      reconnectStream('Stream disconnected — reconnecting…');
+    }
     EspUi.setConnection($('health'), true);
     $('uptime').textContent = EspUi.formatDuration(state.uptime_ms);
     $('temperature').textContent = `${state.chip_temperature_c.toFixed(1)} °C`;
@@ -210,6 +327,8 @@ async function loadHealth() {
     }
     $('lastUpdate').textContent = `Updated ${new Date().toLocaleTimeString()}`;
   } catch {
+    healthReachable = false;
+    reconnectStream('Camera unreachable — reconnecting…');
     EspUi.setConnection($('health'), false);
     $('recordingStatus').textContent = 'Recording status unavailable — retrying';
     for (const id of ['recordStart', 'recordStop', 'recordRefresh']) {
@@ -220,6 +339,7 @@ async function loadHealth() {
     }
     $('lastUpdate').textContent = 'Health endpoint unavailable';
   } finally {
+    clearTimeout(timeout);
     healthLoading = false;
   }
 }
@@ -256,20 +376,29 @@ for (const name of ['quality', 'brightness', 'contrast']) {
 for (const name of ['vflip', 'hmirror', 'flash']) {
   $(name).onchange = event => control(name, event.target.checked ? 1 : 0);
 }
-image.onerror = () => {
-  hideImage(streamWanted ? 'Reconnecting…' : 'Stream unavailable');
-  if (streamWanted && !document.hidden) {
-    reconnectTimer = setTimeout(connectStream, reconnectDelay);
-    reconnectDelay = Math.min(reconnectDelay * 2, 10000);
-  }
-};
 playback.onerror = () => stopPlayback('Playback ended or unavailable');
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) image.removeAttribute('src');
+  if (document.hidden) {
+    ++streamGeneration;
+    clearStreamTimers();
+    image.removeAttribute('src');
+  }
   else {
     connectStream();
     loadHealth();
   }
+});
+window.addEventListener('offline', () => {
+  healthReachable = false;
+  clearStreamTimers();
+  reconnectStream('Network unavailable — waiting…');
+});
+window.addEventListener('online', () => {
+  if (streamWanted && !document.hidden) {
+    reconnectDelay = 1000;
+    connectStream();
+  }
+  if (!document.hidden) loadHealth();
 });
 loadStatus();
 loadHealth();
