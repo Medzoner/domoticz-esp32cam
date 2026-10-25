@@ -63,7 +63,9 @@ driver, power integrity, or FreeRTOS scheduling.
 ```sh
 pio test -e native
 pio test -e native-sanitized
+pio test -e native-storage -e native-storage-sanitized
 python -m unittest discover -s test/python -v
+node --test test/web/recording_health.test.cjs
 pio check -e native
 pio check -e esp32cam
 pio run -e esp32cam -e esp-eye -e esp32s3-cam-lcd -e m5stack-camera
@@ -142,7 +144,7 @@ performance benchmark.
 
 Before describing a release as a community reference validated on hardware,
 collect the matrix above. Further work should prioritize auditing shared state
-in the other adapters, measuring camera capture/copy occupancy, SD blocking
+in the remaining adapters, measuring camera capture/copy occupancy, SD blocking
 and interrupted-recording recovery, malformed-input fuzzing, and repeatable
 hardware-in-the-loop fault injection. Track these as separate, reviewable
 changes rather than claiming this document or a single patch solves them.

@@ -116,6 +116,11 @@ recording as unsupported until their storage wiring is defined and validated.
 For the MJR1 format, interrupted-recording behavior and a non-destructive host
 recovery tool, see [recording integrity and recovery](docs/RECORDINGS.md).
 
+During SD lock contention, `/health` marks `recording_stats_valid: false`; do
+not interpret the recording counters in that response as an idle or empty card.
+The dashboard displays an unknown/retrying state. Stop/list requests return
+HTTP 503 when they cannot be accepted instead of silently reporting success.
+
 Create the local configuration file:
 
 ```bash

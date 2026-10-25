@@ -60,8 +60,14 @@ jobs:
       - name: Test offline recording recovery
         run: python -m unittest discover -s test/python -v
 
+      - name: Test recording health UI behavior
+        run: node --test test/web/recording_health.test.cjs
+
       - name: Run native tests with memory and undefined-behavior sanitizers
         run: pio test --environment native-sanitized
+
+      - name: Fault-inject recorder locking in the real SD adapter
+        run: pio test --environment native-storage --environment native-storage-sanitized
 
       - name: Run native static analysis
         run: pio check --environment native

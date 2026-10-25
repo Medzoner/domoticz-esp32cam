@@ -92,7 +92,7 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
              static_cast<unsigned int>(stats.peer[2]),
              static_cast<unsigned int>(stats.peer[3]));
   }
-  char body[1216]{};
+  char body[1280]{};
   const int length = snprintf(body, sizeof(body),
            "{\"status\":\"%s\",\"stream_service\":\"%s\","
            "\"playback_service\":\"%s\",\"uptime_ms\":%lu,"
@@ -107,14 +107,16 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
            "\"stream_delivery_ms\":%u,\"stream_target_fps\":%u,"
            "\"stream_quality_offset\":%u,\"stream_pressure\":%u,"
            "\"stream_clients\":%u,\"stream_peer\":\"%s\","
-           "\"recording_supported\":%s,\"sd_available\":%s,"
+            "\"recording_supported\":%s,\"sd_available\":%s,"
+            "\"recording_stats_valid\":%s,"
            "\"recording_active\":%s,\"recording_pending\":%s,"
            "\"recording_segment\":%u,\"recording_segments\":%u,"
            "\"recording_frames\":%u,\"recording_failures\":%u,"
            "\"recording_bytes\":%llu,\"sd_total_bytes\":%llu,"
            "\"sd_free_bytes\":%llu}",
            streamState == core::ServiceState::kRunning &&
-                   playbackState == core::ServiceState::kRunning ? "ok" : "degraded",
+                    playbackState == core::ServiceState::kRunning &&
+                    recording.snapshotValid ? "ok" : "degraded",
            core::serviceStateName(streamState), core::serviceStateName(playbackState),
            millis(), static_cast<double>(temperatureRead()), ESP.getHeapSize(),
            ESP.getFreeHeap(), ESP.getPsramSize(), ESP.getFreePsram(),
@@ -128,7 +130,8 @@ esp_err_t HttpControlServer::healthHandler(httpd_req_t* request) {
            stats.stackHeadroomBytes, stats.averageDeliveryMs, stats.targetFps,
            stats.jpegQualityOffset, stats.pressureLevel, stats.clients, peer,
            recording.supported ? "true" : "false",
-           recording.available ? "true" : "false",
+            recording.available ? "true" : "false",
+            recording.snapshotValid ? "true" : "false",
            recording.active ? "true" : "false",
            recording.startPending ? "true" : "false", recording.segment,
            recording.segments, recording.frames, recording.failures,
@@ -279,7 +282,11 @@ esp_err_t HttpControlServer::recordingStopHandler(httpd_req_t* request) {
   if (!self.middleware_.handle(request, http::AccessPolicy::kMutation)) {
     return ESP_OK;
   }
-  self.recordings_.requestStop();
+  if (!self.recordings_.requestStop()) {
+    return http::response::error(request,
+                                 http::response::kStatusServiceUnavailable,
+                                 "recording stop request not accepted; retry");
+  }
   return http::response::json(request, "{\"stopping\":true}");
 }
 
@@ -289,7 +296,7 @@ esp_err_t HttpControlServer::recordingsHandler(httpd_req_t* request) {
     return ESP_OK;
   }
   const ports::RecordingStats stats = self.recordings_.stats();
-  if (!stats.available) {
+  if (!stats.snapshotValid || !stats.available) {
     return http::response::error(request,
                                  http::response::kStatusServiceUnavailable,
                                  kMessageRecordingUnavailable);
@@ -300,8 +307,12 @@ esp_err_t HttpControlServer::recordingsHandler(httpd_req_t* request) {
   }
 
   ports::RecordingFileInfo files[config::kMaxRecordingFiles]{};
-  const std::size_t count =
-      self.recordings_.list(files, config::kMaxRecordingFiles);
+  std::size_t count = 0;
+  if (!self.recordings_.list(files, config::kMaxRecordingFiles, count)) {
+    return http::response::error(request,
+                                 http::response::kStatusServiceUnavailable,
+                                 "recording listing unavailable; retry");
+  }
   httpd_resp_set_type(request, http::response::kJsonContentType);
   http::response::setSecurityHeaders(request);
   if (httpd_resp_sendstr_chunk(request, "{\"files\":[") != ESP_OK) {
