@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.5](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.4...v0.1.5) (2026-10-25)
+
+
+### Bug Fixes
+
+* synchronize recorder state and report lock failures ([#14](https://github.com/Medzoner/domoticz-esp32cam/issues/14))t ([bb86aa7](https://github.com/Medzoner/domoticz-esp32cam/commit/bb86aa72c29172dba8557f3643e11a8caf7aba08))
+* validate MJR1 tails and recover complete prefixes ([#12](https://github.com/Medzoner/domoticz-esp32cam/issues/12)) ([2b1352b](https://github.com/Medzoner/domoticz-esp32cam/commit/2b1352b3fbb00f411c9fa6cbdc1ee47df87fdf0a))
+
 ## [0.1.4](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.3...v0.1.4) (2026-10-25)
 
 
