@@ -10,6 +10,7 @@
 #include "core/auth/basic_auth.h"
 #include "core/recording/recording_rules.h"
 #include "core/stream/mjpeg_protocol.h"
+#include "adapters/network/bounded_socket_write.h"
 
 namespace app::adapters {
 namespace {
@@ -97,18 +98,21 @@ void RecordingPlaybackServer::handleClient(WiFiClient& client) {
     download(client, index);
     return;
   }
-  client.print(kNotFoundResponse);
+  writeAll(client, reinterpret_cast<const uint8_t*>(kNotFoundResponse),
+           sizeof(kNotFoundResponse) - 1);
 }
 
 bool RecordingPlaybackServer::play(WiFiClient& client, uint32_t index) {
   if (!recordings_.openReader(index)) {
-    client.print(kBusyResponse);
+    writeAll(client, reinterpret_cast<const uint8_t*>(kBusyResponse),
+             sizeof(kBusyResponse) - 1);
     return false;
   }
   uint8_t magic[sizeof(core::recording::kFileMagic)]{};
   if (!readExact(magic, sizeof(magic)) ||
       std::memcmp(magic, core::recording::kFileMagic, sizeof(magic)) != 0) {
-    client.print(kNotFoundResponse);
+    writeAll(client, reinterpret_cast<const uint8_t*>(kNotFoundResponse),
+             sizeof(kNotFoundResponse) - 1);
     return false;
   }
   if (!writeAll(client, reinterpret_cast<const uint8_t*>(kPlaybackResponse),
@@ -161,7 +165,8 @@ bool RecordingPlaybackServer::play(WiFiClient& client, uint32_t index) {
 
 bool RecordingPlaybackServer::download(WiFiClient& client, uint32_t index) {
   if (!recordings_.openReader(index)) {
-    client.print(kBusyResponse);
+    writeAll(client, reinterpret_cast<const uint8_t*>(kBusyResponse),
+             sizeof(kBusyResponse) - 1);
     return false;
   }
   char header[256]{};
@@ -240,7 +245,9 @@ bool RecordingPlaybackServer::drainRequestHeaders(WiFiClient& client) {
             authorization[0] == '\0' ? nullptr : authorization,
             cookie[0] == '\0' ? nullptr : cookie);
         if (!decision.granted) {
-          client.print(core::mjpeg::kUnauthorizedResponse);
+          writeAll(client,
+                   reinterpret_cast<const uint8_t*>(core::mjpeg::kUnauthorizedResponse),
+                   sizeof(core::mjpeg::kUnauthorizedResponse) - 1);
         }
         return decision.granted;
       }
@@ -261,21 +268,8 @@ bool RecordingPlaybackServer::drainRequestHeaders(WiFiClient& client) {
 bool RecordingPlaybackServer::writeAll(WiFiClient& client,
                                        const uint8_t* data,
                                        std::size_t length) {
-  const uint32_t deadline = millis() + config::kClientWriteTimeoutMs;
-  while (length > 0 && client.connected()) {
-    const std::size_t block = min(
-        length, static_cast<std::size_t>(config::kStreamWriteBlockSize));
-    const std::size_t written = client.write(data, block);
-    if (written == 0) {
-      return false;
-    }
-    data += written;
-    length -= written;
-    if (static_cast<int32_t>(millis() - deadline) >= 0 && length > 0) {
-      return false;
-    }
-  }
-  return length == 0;
+  return boundedSocketWrite(client, data, length, config::kStreamWriteBlockSize,
+                            config::kClientWriteTimeoutMs);
 }
 
 bool RecordingPlaybackServer::readExact(uint8_t* destination,

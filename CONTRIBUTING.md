@@ -52,6 +52,7 @@ Before opening a pull request, run the same essential checks as CI:
 
 ```bash
 pio test --environment native
+pio test --environment native-sanitized
 pio check --environment native
 pio check --environment esp32cam
 for environment in esp32cam esp-eye esp32s3-cam-lcd m5stack-camera; do
@@ -62,6 +63,8 @@ done
 For hardware-facing changes, flash every affected board you can access and add
 the board, sensor, browser/client, and result to the pull request. A lack of
 hardware access is not automatically a blocker, but it must be stated clearly.
+Use the [reliability contract and hardware acceptance protocol](docs/RELIABILITY.md)
+to distinguish build coverage from measured hardware behavior.
 
 ## Code style
 

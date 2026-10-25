@@ -4,6 +4,7 @@
 
 #include "core/auth/basic_auth.h"
 #include "core/stream/mjpeg_protocol.h"
+#include "adapters/network/bounded_socket_write.h"
 
 namespace app::adapters {
 MjpegServer::MjpegServer(ports::CameraPort& camera,
@@ -58,12 +59,11 @@ void MjpegServer::run() {
 
   for (;;) {
     recordings_.service();
-    if (stopRequested_) {
+    if (stopRequested_.exchange(false)) {
       for (std::size_t index = 0; index < config::kMaxStreamClients;
            ++index) {
         closeClient(index);
       }
-      stopRequested_ = false;
     }
 
     acceptClient();
@@ -104,7 +104,9 @@ void MjpegServer::acceptClient() {
     return;
   }
   if (!core::mjpeg::isStreamRequestLine(requestLine)) {
-    candidate.print(core::mjpeg::kNotFoundResponse);
+    writeAll(candidate,
+             reinterpret_cast<const uint8_t*>(core::mjpeg::kNotFoundResponse),
+             sizeof(core::mjpeg::kNotFoundResponse) - 1);
     candidate.stop();
     return;
   }
@@ -113,12 +115,19 @@ void MjpegServer::acceptClient() {
     if (!clients_[index] || !clients_[index].connected()) {
       closeClient(index);
       clients_[index] = candidate;
-      clients_[index].print(core::mjpeg::kSuccessResponse);
+      if (!writeAll(clients_[index],
+                    reinterpret_cast<const uint8_t*>(core::mjpeg::kSuccessResponse),
+                    sizeof(core::mjpeg::kSuccessResponse) - 1)) {
+        closeClient(index);
+        return;
+      }
       ++sessionCount_;
       return;
     }
   }
-  candidate.print(core::mjpeg::kUnavailableResponse);
+  writeAll(candidate,
+           reinterpret_cast<const uint8_t*>(core::mjpeg::kUnavailableResponse),
+           sizeof(core::mjpeg::kUnavailableResponse) - 1);
   candidate.stop();
 }
 
@@ -131,21 +140,8 @@ void MjpegServer::closeClient(std::size_t index) {
 
 bool MjpegServer::writeAll(WiFiClient& client, const uint8_t* data,
                            std::size_t length) {
-  const uint32_t deadline = millis() + config::kClientWriteTimeoutMs;
-  while (length > 0 && client.connected()) {
-    const std::size_t block =
-        min(length, static_cast<std::size_t>(config::kStreamWriteBlockSize));
-    const std::size_t written = client.write(data, block);
-    if (written == 0) {
-      return false;
-    }
-    data += written;
-    length -= written;
-    if (static_cast<int32_t>(millis() - deadline) >= 0 && length > 0) {
-      return false;
-    }
-  }
-  return length == 0;
+  return boundedSocketWrite(client, data, length, config::kStreamWriteBlockSize,
+                            config::kClientWriteTimeoutMs);
 }
 
 bool MjpegServer::readRequestLine(WiFiClient& client, char* destination,
@@ -205,7 +201,9 @@ bool MjpegServer::drainRequestHeaders(WiFiClient& client) {
             authorization[0] == '\0' ? nullptr : authorization,
             cookie[0] == '\0' ? nullptr : cookie);
         if (!decision.granted) {
-          client.print(core::mjpeg::kUnauthorizedResponse);
+          writeAll(client,
+                   reinterpret_cast<const uint8_t*>(core::mjpeg::kUnauthorizedResponse),
+                   sizeof(core::mjpeg::kUnauthorizedResponse) - 1);
         }
         return decision.granted;
       }
@@ -247,7 +245,7 @@ void MjpegServer::refreshPerformanceStats() {
   const uint32_t frames = frameCount_ - statsStartedAtFrame_;
   framesPerSecondTimes10_ =
       static_cast<uint16_t>((frames * 10000UL) / elapsed);
-  stackHeadroomBytes_ = uxTaskGetStackHighWaterMark(taskHandle_);
+  stackHeadroomBytes_ = uxTaskGetStackHighWaterMark(nullptr);
   averageDeliveryMs_ = deliverySamples_ == 0
                            ? 0
                            : deliveryDurationTotalMs_ / deliverySamples_;

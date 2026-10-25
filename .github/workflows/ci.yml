@@ -57,6 +57,9 @@ jobs:
       - name: Run native unit tests
         run: pio test --environment native
 
+      - name: Run native tests with memory and undefined-behavior sanitizers
+        run: pio test --environment native-sanitized
+
       - name: Run native static analysis
         run: pio check --environment native
 
