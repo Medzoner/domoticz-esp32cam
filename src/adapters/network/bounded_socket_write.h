@@ -13,13 +13,14 @@ namespace app::adapters {
 // around it cannot impose a total deadline. Send directly without blocking.
 inline bool boundedSocketWrite(WiFiClient& client, const uint8_t* data,
                                std::size_t length, std::size_t blockSize,
-                               uint32_t timeoutMs) {
+                               uint32_t timeoutMs, uint32_t idleTimeoutMs = 0) {
   const int socket = client.fd();
   if (socket < 0) {
     return false;
   }
-  return core::boundedWrite(
-      data, length, blockSize, timeoutMs, [] { return millis(); },
+  return core::boundedWriteWithIdleTimeout(
+      data, length, blockSize, timeoutMs,
+      idleTimeoutMs == 0 ? timeoutMs : idleTimeoutMs, [] { return millis(); },
       [socket](const uint8_t* bytes, std::size_t count) -> std::ptrdiff_t {
         const int result = ::send(socket, bytes, count, MSG_DONTWAIT);
         if (result > 0) {

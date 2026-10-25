@@ -49,6 +49,14 @@ latency. The MJPEG server combines each multipart boundary and JPEG header into
 one TCP write, then sends image data in 16 KiB blocks. This reduces socket calls
 while retaining a bounded timeout for slow consumers.
 
+Live JPEG payloads have a 300 ms no-progress timeout and a 2 s absolute budget.
+This lets a large image finish when bytes are still progressing instead of
+cutting it at the former 300 ms total deadline. HTTP/part headers and playback
+blocks retain their 300 ms total budget. Clients remain sequential: this grace
+can delay later clients and recording; it is not an independent-client scheduler.
+`stream_write_failures` counts cumulative failed live preamble/payload writes,
+including disconnects, separately from rejected camera frames.
+
 With PSRAM, the driver is initialized at UXGA/high JPEG quality to reserve
 buffers for the maximum supported resolution, then the active sensor is reset
 to VGA/default quality. Initializing only at VGA and later requesting larger

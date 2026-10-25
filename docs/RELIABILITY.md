@@ -10,13 +10,21 @@ driver, power integrity, or FreeRTOS scheduling.
 - At most four live MJPEG sessions; a fifth receives an unavailable response.
 - One captured JPEG is broadcast sequentially. Slow clients can delay subsequent
   clients; this is not independent per-client scheduling.
-- Live and playback payload writes use `send(..., MSG_DONTWAIT)` with one elapsed
-  time budget per `writeAll` call. Partial progress does not reset that budget;
-  retryable errors yield a FreeRTOS tick. Expiry or a fatal error closes the
-  session. Deadline arithmetic handles the 32-bit `millis()` rollover.
+- Live and playback writes use `send(..., MSG_DONTWAIT)`. Live JPEG payloads have
+  a 2 s absolute budget plus a 300 ms no-progress deadline. Only positive writes
+  refresh the idle deadline; neither progress nor retries extend the absolute
+  budget. Retryable errors yield a FreeRTOS tick. Expiry or fatal error closes
+  the session. Both clocks handle the 32-bit `millis()` rollover. Other writes
+  retain 300 ms total budgets (including headers and each playback/download block).
 - A live frame has separate preamble and payload writes per client; playback
   and download have a separate budget for each block. There is no whole-file
   deadline and no hard real-time guarantee: scheduling adds latency.
+  Four progressing slow live clients can consume up to 8 s of payload budgets
+  in one sequential cycle, plus headers/capture/SD/scheduling. A completely stuck
+  write still expires at the idle deadline. This explicit trade-off avoids
+  prematurely truncating a large progressing JPEG, not all possible truncation.
+  `stream_write_failures` counts failed live frame writes, including client
+  disconnects; it is not a timeout-only or camera-corruption counter.
 - The stream task reserves a single 512 KiB PSRAM-only delivery buffer before
   opening its listener. Reservation failure marks startup failed and deletes the
   task; HTTP diagnostics remain available. There is no DRAM fallback. On listener

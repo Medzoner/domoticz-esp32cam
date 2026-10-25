@@ -20,6 +20,9 @@ inline constexpr uint32_t kStreamStatsIntervalMs = 1000;
 inline constexpr uint32_t kStreamAdaptationIntervalMs = 2000;
 inline constexpr uint32_t kClientReadTimeoutMs = 250;
 inline constexpr uint32_t kClientWriteTimeoutMs = 300;
+// Large JPEGs may take >300 ms while still progressing. Keep a 300 ms idle
+// deadline but cap each live payload at 2 seconds regardless of progress.
+inline constexpr uint32_t kStreamFrameWriteBudgetMs = 2000;
 inline constexpr std::size_t kRequestLineCapacity = 128;
 inline constexpr std::size_t kPartHeaderCapacity = 96;
 inline constexpr std::size_t kMaximumRequestHeaderBytes = 1024;
