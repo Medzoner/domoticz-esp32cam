@@ -23,6 +23,16 @@ that later frames were never lost or that the JPEG bytes are uncorrupted.
 
 ## Firmware behavior
 
+- Playback and download reuse one 4 KiB I/O buffer owned by the server, outside
+  its 4 KiB FreeRTOS task stack. The global server instance and sequential worker
+  give that buffer a stable lifetime and a single owner; no per-request allocation
+  is required. Do not instantiate this server as a task-local object or call its
+  request handlers concurrently without changing that ownership model.
+- Firmware builds emit GCC `.su` stack reports. CI checks the playback translation
+  unit for static per-function frames of at most 1 KiB, including both delivery
+  routes (`python scripts/check_playback_stack.py esp32cam`). This catches a
+  reintroduced stack-local I/O buffer; it is not a whole-call-chain stack bound
+  or a replacement for physical playback/download testing.
 - Short header or payload writes fail the append. The recorder increments
   `recording_failures`, closes the segment and does not count that record as a
   completed frame. It does not retry the whole record after partial progress.
