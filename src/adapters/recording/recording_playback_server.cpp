@@ -149,7 +149,6 @@ bool RecordingPlaybackServer::play(WiFiClient& client, uint32_t index) {
     return false;
   }
 
-  uint8_t buffer[config::kRecordingReadBlockSize];
   uint64_t remainingFile = fileSize - sizeof(magic);
   while (client.connected()) {
     const auto frame = core::recording::nextFrame(
@@ -177,8 +176,8 @@ bool RecordingPlaybackServer::play(WiFiClient& client, uint32_t index) {
     std::size_t remaining = frameSize;
     while (remaining > 0) {
       const std::size_t block =
-          min(remaining, static_cast<std::size_t>(sizeof(buffer)));
-      if (!readExact(buffer, block) || !writeAll(client, buffer, block)) {
+          min(remaining, static_cast<std::size_t>(sizeof(readBuffer_)));
+      if (!readExact(readBuffer_, block) || !writeAll(client, readBuffer_, block)) {
         Serial.println("[playback] frame read or delivery failed");
         return false;
       }
@@ -216,16 +215,15 @@ bool RecordingPlaybackServer::download(WiFiClient& client, uint32_t index) {
       !writeAll(client, reinterpret_cast<const uint8_t*>(header), length)) {
     return false;
   }
-  uint8_t buffer[config::kRecordingReadBlockSize];
   while (remaining > 0) {
-    const std::size_t block = remaining < sizeof(buffer)
-                                  ? static_cast<std::size_t>(remaining)
-                                  : sizeof(buffer);
-    if (!readExact(buffer, block)) {
+    const std::size_t block = remaining < sizeof(readBuffer_)
+                                   ? static_cast<std::size_t>(remaining)
+                                   : sizeof(readBuffer_);
+    if (!readExact(readBuffer_, block)) {
       Serial.println("[download] SD read failed before Content-Length was reached");
       return false;
     }
-    if (!writeAll(client, buffer, block)) {
+    if (!writeAll(client, readBuffer_, block)) {
       return false;
     }
     remaining -= block;

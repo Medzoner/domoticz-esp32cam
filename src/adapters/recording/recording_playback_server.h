@@ -2,6 +2,7 @@
 
 #include <WiFi.h>
 
+#include "config/recording_config.h"
 #include "ports/auth/authentication_port.h"
 #include "core/service/service_startup.h"
 #include "ports/recording/recording_port.h"
@@ -31,6 +32,9 @@ class RecordingPlaybackServer {
   ports::AuthenticationPort& authentication_;
   WiFiServer server_;
   core::ServiceStartup startup_;
+  // One playback task handles clients sequentially. Keep its shared I/O buffer
+  // in the server (static lifetime in main), never on the 4 KiB task stack.
+  uint8_t readBuffer_[config::kRecordingReadBlockSize]{};
 };
 
 }  // namespace app::adapters

@@ -81,6 +81,9 @@ jobs:
             pio run --environment "$environment"
           done
 
+      - name: Guard playback and download stack frames
+        run: python scripts/check_playback_stack.py esp32cam esp-eye esp32s3-cam-lcd m5stack-camera
+
       - name: Stage firmware artifacts
         run: |
           mkdir -p dist
