@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.6...v0.1.7) (2026-10-31)
+
+
+### Bug Fixes
+
+* move playback and download buffer off the task stack ([#17](https://github.com/Medzoner/domoticz-esp32cam/issues/17)) ([3ab9a1b](https://github.com/Medzoner/domoticz-esp32cam/commit/3ab9a1bc1b6b13a29e32eb91a1a17f455deda596))
+
 ## [0.1.6](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.5...v0.1.6) (2026-10-25)
 
 
