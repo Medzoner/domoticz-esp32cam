@@ -12,6 +12,11 @@ inline constexpr uint32_t kRecordingLockTimeoutMs = 1000;
 inline constexpr uint32_t kMaximumRecordingSegmentIndex = 99999;
 inline constexpr std::size_t kMaxRecordingFiles = 32;
 inline constexpr std::size_t kRecordingReadBlockSize = 4096;
+// Per download block: tolerate Wi-Fi backpressure without retaining a stalled
+// reader indefinitely. Progress refreshes only the idle deadline.
+inline constexpr uint32_t kDownloadWriteTimeoutMs = 5000;
+inline constexpr uint32_t kDownloadWriteIdleTimeoutMs = 2000;
+inline constexpr uint32_t kDownloadTransferTimeoutMs = 10 * 60 * 1000;
 inline constexpr std::size_t kMaximumRecordedFrameBytes = 2 * 1024 * 1024;
 inline constexpr uint16_t kPlaybackPort = 82;
 inline constexpr uint32_t kPlaybackFrameIntervalMs = 100;

@@ -57,6 +57,17 @@ can delay later clients and recording; it is not an independent-client scheduler
 `stream_write_failures` counts cumulative failed live preamble/payload writes,
 including disconnects, separately from rejected camera frames.
 
+SD downloads use a separate budget per 4 KiB payload block: 2 seconds without
+socket progress and a 5-second absolute limit. This tolerates brief Wi-Fi
+backpressure without retaining a stalled reader indefinitely. The entire body
+also has a 10-minute deadline, never reset by progress. Until the transfer ends,
+the single reader prevents recording starts, deletion and other playback/download
+requests; clients too slow to finish within this limit must retry. Cleanup retries
+transient SD lock failures before accepting another reader. Headers and
+playback keep their existing 300 ms budget. A failed download closes the
+connection (it does not resume); retry it and check that the received size
+matches `Content-Length`. These limits still require validation on hardware.
+
 With PSRAM, the driver is initialized at UXGA/high JPEG quality to reserve
 buffers for the maximum supported resolution, then the active sensor is reset
 to VGA/default quality. Initializing only at VGA and later requesting larger
