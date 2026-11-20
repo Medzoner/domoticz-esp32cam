@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.7...v0.1.8) (2026-11-20)
+
+
+### Bug Fixes
+
+* bound SD download payload transfer with idle and total deadlines ([#19](https://github.com/Medzoner/domoticz-esp32cam/issues/19)) ([a900e40](https://github.com/Medzoner/domoticz-esp32cam/commit/a900e40536d1e3dbf2e91a96ea475358681256a3))
+
 ## [0.1.7](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.6...v0.1.7) (2026-10-31)
 
 
