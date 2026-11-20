@@ -10,6 +10,7 @@
 #include "core/auth/basic_auth.h"
 #include "core/recording/recording_rules.h"
 #include "core/recording/recording_reader.h"
+#include "core/recording/download_transfer.h"
 #include "core/stream/mjpeg_protocol.h"
 #include "adapters/network/bounded_socket_write.h"
 
@@ -96,13 +97,10 @@ void RecordingPlaybackServer::run() {
     }
     client.setTimeout(config::kClientReadTimeoutMs);
     client.setNoDelay(true);
-    handleClient(client);
-    client.stop();
-    // Do not abandon the reader after a transient lock timeout. No new client
-    // is accepted until cleanup succeeds; the HTTP task remains independent.
-    while (!recordings_.closeReader()) {
-      vTaskDelay(pdMS_TO_TICKS(config::kIdleDelayMs));
-    }
+    core::recording::recordingReaderSession(
+        [&] { handleClient(client); }, [&] { client.stop(); },
+        [&] { return recordings_.closeReader(); },
+        [] { vTaskDelay(pdMS_TO_TICKS(config::kIdleDelayMs)); });
   }
 }
 
@@ -215,20 +213,21 @@ bool RecordingPlaybackServer::download(WiFiClient& client, uint32_t index) {
       !writeAll(client, reinterpret_cast<const uint8_t*>(header), length)) {
     return false;
   }
-  while (remaining > 0) {
-    const std::size_t block = remaining < sizeof(readBuffer_)
-                                   ? static_cast<std::size_t>(remaining)
-                                   : sizeof(readBuffer_);
-    if (!readExact(readBuffer_, block)) {
-      Serial.println("[download] SD read failed before Content-Length was reached");
-      return false;
-    }
-    if (!writeAll(client, readBuffer_, block)) {
-      return false;
-    }
-    remaining -= block;
+  const bool completed = core::recording::downloadTransfer(
+      remaining, readBuffer_, sizeof(readBuffer_),
+      config::kDownloadTransferTimeoutMs, [] { return millis(); },
+      [&](uint8_t* data, std::size_t size) { return readExact(data, size); },
+      [&](const uint8_t* data, std::size_t size, uint32_t remainingMs) {
+        const uint32_t budget = remainingMs < config::kDownloadWriteTimeoutMs
+                                    ? remainingMs : config::kDownloadWriteTimeoutMs;
+        return boundedSocketWrite(client, data, size,
+                                  config::kStreamWriteBlockSize, budget,
+                                  config::kDownloadWriteIdleTimeoutMs);
+      });
+  if (!completed) {
+    Serial.println("[download] SD/socket failure or deadline before Content-Length was reached");
   }
-  return true;
+  return completed;
 }
 
 bool RecordingPlaybackServer::readRequestLine(WiFiClient& client,
