@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.8...v0.1.9) (2026-11-21)
+
+
+### Bug Fixes
+
+* bound SD playback frames with shared transfer deadlines ([#21](https://github.com/Medzoner/domoticz-esp32cam/issues/21)) ([20d52a8](https://github.com/Medzoner/domoticz-esp32cam/commit/20d52a88749083380d9529b4ab59946f9a7ffecd))
+
 ## [0.1.8](https://github.com/Medzoner/domoticz-esp32cam/compare/v0.1.7...v0.1.8) (2026-11-20)
 
 
