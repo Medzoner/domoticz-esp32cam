@@ -11,16 +11,17 @@ namespace app::adapters {
 
 // WiFiClient::write() has its own internal retry loop; checking millis()
 // around it cannot impose a total deadline. Send directly without blocking.
-inline bool boundedSocketWrite(WiFiClient& client, const uint8_t* data,
+inline bool boundedSocketWriteFrom(WiFiClient& client, const uint8_t* data,
                                std::size_t length, std::size_t blockSize,
-                               uint32_t timeoutMs, uint32_t idleTimeoutMs = 0) {
+                               uint32_t timeoutMs, uint32_t idleTimeoutMs,
+                               uint32_t startedAt) {
   const int socket = client.fd();
   if (socket < 0) {
     return false;
   }
-  return core::boundedWriteWithIdleTimeout(
+  return core::boundedWriteFrom(
       data, length, blockSize, timeoutMs,
-      idleTimeoutMs == 0 ? timeoutMs : idleTimeoutMs, [] { return millis(); },
+      idleTimeoutMs == 0 ? timeoutMs : idleTimeoutMs, startedAt, [] { return millis(); },
       [socket](const uint8_t* bytes, std::size_t count) -> std::ptrdiff_t {
         const int result = ::send(socket, bytes, count, MSG_DONTWAIT);
         if (result > 0) {
@@ -33,6 +34,13 @@ inline bool boundedSocketWrite(WiFiClient& client, const uint8_t* data,
         return -1;
       },
       [] { vTaskDelay(1); });
+}
+
+inline bool boundedSocketWrite(WiFiClient& client, const uint8_t* data,
+                               std::size_t length, std::size_t blockSize,
+                               uint32_t timeoutMs, uint32_t idleTimeoutMs = 0) {
+  return boundedSocketWriteFrom(client, data, length, blockSize, timeoutMs,
+                                idleTimeoutMs, millis());
 }
 
 }  // namespace app::adapters
