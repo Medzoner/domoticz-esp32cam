@@ -51,8 +51,8 @@ while retaining a bounded timeout for slow consumers.
 
 Live JPEG payloads have a 300 ms no-progress timeout and a 2 s absolute budget.
 This lets a large image finish when bytes are still progressing instead of
-cutting it at the former 300 ms total deadline. HTTP/part headers and playback
-blocks retain their 300 ms total budget. Clients remain sequential: this grace
+cutting it at the former 300 ms total deadline. Live HTTP/part headers retain
+their 300 ms total budget. Clients remain sequential: this grace
 can delay later clients and recording; it is not an independent-client scheduler.
 `stream_write_failures` counts cumulative failed live preamble/payload writes,
 including disconnects, separately from rejected camera frames.
@@ -63,10 +63,24 @@ backpressure without retaining a stalled reader indefinitely. The entire body
 also has a 10-minute deadline, never reset by progress. Until the transfer ends,
 the single reader prevents recording starts, deletion and other playback/download
 requests; clients too slow to finish within this limit must retry. Cleanup retries
-transient SD lock failures before accepting another reader. Headers and
-playback keep their existing 300 ms budget. A failed download closes the
+transient SD lock failures before accepting another reader. HTTP headers keep
+their existing 300 ms budget. A failed download closes the
 connection (it does not resume); retry it and check that the received size
 matches `Content-Length`. These limits still require validation on hardware.
+
+SD playback allows 2 seconds without socket progress within each individual
+socket write and 5 seconds total per
+frame, including its SD reads, multipart preamble and all 4 KiB payload blocks.
+The idle timer restarts for each write and excludes SD reads between writes;
+the shared absolute frame deadline does not restart.
+A session has 10 minutes of cumulative slowdown allowance: only frame-transfer
+time exceeding the nominal 100 ms frame interval consumes it. Normal recording
+duration is not capped at 10 minutes, so long healthy recordings can finish.
+The frame deadline is absolute and shared across all writes. SD calls and reader
+cleanup are not preempted by these deadlines. Once an SD read returns after the
+frame deadline, no further frame reads or writes are started. The initial HTTP response keeps its
+300 ms budget; live streaming and download budgets are unchanged. On a truncated
+playback connection, retry playback rather than treating HTTP 200 as completion.
 
 With PSRAM, the driver is initialized at UXGA/high JPEG quality to reserve
 buffers for the maximum supported resolution, then the active sensor is reset

@@ -9,9 +9,9 @@ namespace app::core {
 // Clock returns a uint32_t monotonic millisecond counter; pause must yield
 // and allow it to advance. A single total budget covers all partial writes.
 template <typename Clock, typename Send, typename Pause>
-bool boundedWriteWithIdleTimeout(const uint8_t* data, std::size_t length,
+bool boundedWriteFrom(const uint8_t* data, std::size_t length,
                                  std::size_t blockSize, uint32_t timeoutMs,
-                                 uint32_t idleTimeoutMs, Clock clock,
+                                 uint32_t idleTimeoutMs, uint32_t startedAt, Clock clock,
                                  Send send, Pause pause) {
   if (length == 0) {
     return true;
@@ -19,8 +19,9 @@ bool boundedWriteWithIdleTimeout(const uint8_t* data, std::size_t length,
   if (data == nullptr || blockSize == 0 || timeoutMs == 0 || idleTimeoutMs == 0) {
     return false;
   }
-  const uint32_t startedAt = clock();
-  uint32_t lastProgressAt = startedAt;
+  // Idle time is local to this write; an absolute startedAt can span writes.
+  // Time spent by the caller reading SD between writes is not socket idle time.
+  uint32_t lastProgressAt = clock();
   while (length > 0) {
     const uint32_t now = clock();
     if (static_cast<uint32_t>(now - startedAt) >= timeoutMs ||
@@ -47,6 +48,15 @@ bool boundedWriteWithIdleTimeout(const uint8_t* data, std::size_t length,
     length -= static_cast<std::size_t>(written);
   }
   return true;
+}
+
+template <typename Clock, typename Send, typename Pause>
+bool boundedWriteWithIdleTimeout(const uint8_t* data, std::size_t length,
+                                 std::size_t blockSize, uint32_t timeoutMs,
+                                 uint32_t idleTimeoutMs, Clock clock,
+                                 Send send, Pause pause) {
+  return boundedWriteFrom(data, length, blockSize, timeoutMs, idleTimeoutMs,
+                          clock(), clock, send, pause);
 }
 
 template <typename Clock, typename Send, typename Pause>

@@ -11,6 +11,7 @@
 #include "core/recording/recording_rules.h"
 #include "core/recording/recording_reader.h"
 #include "core/recording/download_transfer.h"
+#include "core/recording/playback_transfer.h"
 #include "core/stream/mjpeg_protocol.h"
 #include "adapters/network/bounded_socket_write.h"
 
@@ -148,10 +149,26 @@ bool RecordingPlaybackServer::play(WiFiClient& client, uint32_t index) {
   }
 
   uint64_t remainingFile = fileSize - sizeof(magic);
+  core::recording::PlaybackBudget budget(
+      config::kPlaybackFrameIntervalMs, config::kPlaybackFrameWriteTimeoutMs,
+      config::kPlaybackSlowdownBudgetMs);
+  uint32_t frameIndex = 0;
   while (client.connected()) {
+    const auto deadline = budget.next(millis());
+    if (deadline.expired(millis())) {
+      Serial.println("[playback] slowdown allowance exhausted");
+      return false;
+    }
+    const auto readFrame = [&](uint8_t* data, std::size_t size) {
+      return core::recording::playbackRead(
+          data, size, deadline, [] { return millis(); },
+          [this](uint8_t* bytes, std::size_t count) {
+            return recordings_.read(bytes, count);
+          });
+    };
     const auto frame = core::recording::nextFrame(
         remainingFile, config::kMaximumRecordedFrameBytes,
-        [this](uint8_t* data, std::size_t size) { return recordings_.read(data, size); });
+        readFrame);
     if (frame.status == core::recording::FrameReadStatus::kEnd) {
       return true;
     }
@@ -160,28 +177,35 @@ bool RecordingPlaybackServer::play(WiFiClient& client, uint32_t index) {
       return false;
     }
     const uint32_t frameSize = frame.size;
+    ++frameIndex;
 
     char preamble[config::kPartHeaderCapacity]{};
     const std::size_t preambleLength = core::mjpeg::formatPartPreamble(
         preamble, sizeof(preamble), frameSize);
-    if (preambleLength == 0 ||
-        !writeAll(client, reinterpret_cast<const uint8_t*>(preamble),
-                  preambleLength)) {
+    const char* failure = "frame deadline or slowdown allowance";
+    const bool completed = core::recording::playbackFrameTransfer(
+        reinterpret_cast<const uint8_t*>(preamble), preambleLength,
+        frameSize, readBuffer_, sizeof(readBuffer_), deadline,
+        [] { return millis(); },
+        [&](uint8_t* data, std::size_t size) {
+          if (core::recording::readExact(data, size, readFrame)) return true;
+          failure = "SD payload read";
+          return false;
+        },
+        [&](const uint8_t* data, std::size_t size, core::recording::PlaybackDeadline writeDeadline) {
+          if (boundedSocketWriteFrom(client, data, size, config::kStreamWriteBlockSize,
+                                     writeDeadline.budgetMs, config::kPlaybackWriteIdleTimeoutMs,
+                                     writeDeadline.startedAt)) return true;
+          failure = "socket write or timeout";
+          return false;
+        });
+    if (!completed || !budget.complete(deadline, millis())) {
+      Serial.printf("[playback] segment=%u frame=%u failed: %s\n",
+                    static_cast<unsigned int>(index),
+                    static_cast<unsigned int>(frameIndex), failure);
       return false;
     }
-
-    const uint32_t startedAt = millis();
-    std::size_t remaining = frameSize;
-    while (remaining > 0) {
-      const std::size_t block =
-          min(remaining, static_cast<std::size_t>(sizeof(readBuffer_)));
-      if (!readExact(readBuffer_, block) || !writeAll(client, readBuffer_, block)) {
-        Serial.println("[playback] frame read or delivery failed");
-        return false;
-      }
-      remaining -= block;
-    }
-    const uint32_t elapsed = millis() - startedAt;
+    const uint32_t elapsed = millis() - deadline.startedAt;
     if (elapsed < config::kPlaybackFrameIntervalMs) {
       vTaskDelay(pdMS_TO_TICKS(config::kPlaybackFrameIntervalMs - elapsed));
     }
